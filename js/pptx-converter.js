@@ -2,7 +2,7 @@
    Conversor PowerPoint (.pptx) → HTML, 100% en el navegador.
    Uso:
      const res = await PptxConverter.convert(file, { onImage: async (blob, ext) => url });
-     res = { width, height, slides: [{ title, html }] }
+     res = { width, height, slides: [{ title, html, notes }] }
    Requiere JSZip (window.JSZip). Soporta: texto con formato, viñetas,
    formas con relleno/borde, imágenes (con recorte), grupos, tablas, fondos,
    y elementos del diseño/patrón (logos, barras decorativas).
@@ -173,6 +173,7 @@
       const part = { path, doc: parseXml(await f.async('string')), rels: await readRels(zip, path) };
       partCache[path] = part; return part;
     }
+    loadPartPublic = loadPart;
     const mediaCache = {};
     async function mediaUrl(path) {
       if (path in mediaCache) return mediaCache[path];
@@ -204,11 +205,33 @@
       if (ovr) for (const a of Array.from(ovr.attributes)) clrMap[a.name] = a.value;
 
       const ctx = { theme, clrMap, fonts, W, H, mediaUrl, slide, layout, master };
-      slides.push(await renderSlide(ctx));
+      const sl = await renderSlide(ctx);
+      sl.notes = await readNotes(slide);
+      slides.push(sl);
     }
     if (opts.onProgress) opts.onProgress(slidePaths.length, slidePaths.length);
     return { width: px(W), height: px(H), slides };
   }
+
+  // Notas del orador (ppt/notesSlides): texto del marcador de posición "body", un párrafo por línea
+  async function readNotes(slide) {
+    try {
+      const rel = Object.values(slide.rels).find((r) => /notesSlide$/.test(r.type));
+      if (!rel) return '';
+      const part = await loadPartPublic(rel.target);
+      if (!part) return '';
+      const out = [];
+      for (const sp of Array.from(part.doc.getElementsByTagNameNS('*', 'sp'))) {
+        const ph = sp.getElementsByTagNameNS('*', 'ph')[0];
+        if (!ph || at(ph, 'type') !== 'body') continue;
+        for (const p of Array.from(sp.getElementsByTagNameNS('*', 'p'))) {
+          out.push(Array.from(p.getElementsByTagNameNS('*', 't')).map((t) => t.textContent).join(''));
+        }
+      }
+      return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    } catch (e) { return ''; }
+  }
+  let loadPartPublic = async () => null;
 
   // ---------- diapositiva ----------
   async function renderSlide(ctx) {

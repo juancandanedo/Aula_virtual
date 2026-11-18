@@ -209,7 +209,7 @@
 
     $('#page').innerHTML = `
       <div class="viewer">
-        <aside class="side">${slides.map((s, i) => `<button data-i="${i}"><span>${i + 1}</span>${esc(s.title || 'Diapositiva ' + (i + 1))}</button>`).join('')}</aside>
+        <aside class="side">${slides.map((s, i) => `<button data-i="${i}"><span>${i + 1}</span>${esc(s.title || 'Diapositiva ' + (i + 1))}${s.notes ? ' <em class="nt" title="Tiene notas">✎</em>' : ''}</button>`).join('')}</aside>
         <main>
           <div class="crumbs"><a href="#/">Mis materias</a> › <a href="#/s/${subject.id}">${esc(subject.title)}</a> › ${esc(chapter.title)} › <b>${esc(mod.title)}</b></div>
           <div class="stage-wrap" id="wrap"><div class="stage" id="stage"><div class="inner" id="inner"></div></div></div>
@@ -218,6 +218,7 @@
             <div class="row"><button class="btn ghost sm" id="fs">Pantalla completa</button>
               <span id="done" class="badge ${completed ? 'ok' : ''}">${completed ? '✓ Completado' : 'En progreso'}</span></div>
           </div>
+          <details class="card notes" id="notes" hidden open><summary>Notas de la clase</summary><div id="notesbody"></div></details>
           <div class="card" id="endcard" style="margin-top:1rem" hidden>
             <h3>Terminaste este módulo</h3>
             <div class="row">
@@ -249,6 +250,8 @@
       idx = Math.max(0, Math.min(slides.length - 1, i));
       inner.innerHTML = slides[idx].html;
       $('#count').textContent = `${idx + 1} / ${slides.length}`;
+      const nt = slides[idx].notes || '';
+      $('#notes').hidden = !nt; $('#notesbody').innerHTML = nt ? nt.split(/\n+/).map((p) => `<p>${esc(p)}</p>`).join('') : '';
       $$('.side button').forEach((b) => b.classList.toggle('on', +b.dataset.i === idx));
       const last = idx === slides.length - 1;
       $('#endcard').hidden = !last;
@@ -482,6 +485,8 @@
         return sb.storage.from('class-media').getPublicUrl(path).data.publicUrl;
       }
     });
+    const withNotes = res.slides.filter((s) => s.notes).length;
+    if (withNotes && !confirm(`"${file.name}" tiene notas en ${withNotes} diapositivas.\n\n¿Mostrarlas a los estudiantes como material complementario?\n\nAceptar = mostrar · Cancelar = no incluirlas`)) res.slides.forEach((s) => { delete s.notes; });
     busyMsg('Guardando…');
     const row = { slides: res.slides, slide_w: Math.round(res.width), slide_h: Math.round(res.height), slide_count: res.slides.length };
     if (replaceId) {
@@ -503,6 +508,7 @@
         const doc = parser.parseFromString(sl.html || '', 'text/html');
         const t = (doc.body.textContent || '').replace(/\s+/g, ' ').replace(/Profesor:[^.]{0,60}$/i, '').trim();
         if (t) text += `[Diapositiva ${i + 1}] ${t}\n`;
+        if (sl.notes) text += `[Notas de la diapositiva ${i + 1}] ${sl.notes.replace(/\s+/g, ' ').slice(0, 1500)}\n`;
         if (t.length < 80) {
           const urls = Array.from(doc.querySelectorAll('img')).map((x) => x.getAttribute('src'));
           (sl.html.match(/url\('([^']+)'\)/g) || []).forEach((u) => urls.push(u.slice(5, -2)));
