@@ -226,13 +226,19 @@
           ${isAdmin() ? `<details class="card" id="editor"><summary><b>✏️ Notas y audio de esta diapositiva</b> <span class="muted small">(solo administrador)</span></summary>
             <label for="ntxt">Notas (los estudiantes las ven debajo de la diapositiva; déjalo vacío para no mostrar notas)</label>
             <textarea id="ntxt" rows="5" placeholder="Escribe aquí las notas de esta diapositiva…"></textarea>
-            <div class="row" style="margin-top:.5rem"><button class="btn sm" id="nsave">Guardar notas</button></div>
+            <div class="row" style="margin-top:.5rem"><button class="btn sm" id="nsave">Guardar notas</button>
+              <button class="btn ghost sm" id="ngen" type="button" title="Redacta un guion con IA a partir del contenido de la diapositiva">✨ Generar notas con IA</button></div>
             <label>Audio</label>
             <div class="row"><button class="btn sm" id="arec" type="button">● Grabar</button><button class="btn sm danger" id="astop" type="button" hidden>■ Detener</button>
               <label class="btn ghost sm" style="margin:0;font-weight:400">Subir archivo<input type="file" id="afile" accept="audio/*" hidden></label>
+              <button class="btn ghost sm" id="atts" type="button" title="Convierte el texto de las notas en voz con ElevenLabs">🔊 Voz con ElevenLabs</button>
               <button class="btn danger sm" id="adel" type="button" hidden>Quitar audio actual</button><span id="astat" class="muted small"></span></div>
             <div id="apend" hidden style="margin-top:.6rem"><audio id="apre" controls style="width:100%"></audio>
               <div class="row" style="margin-top:.4rem"><button class="btn sm" id="asave" type="button">Guardar este audio</button><button class="btn ghost sm" id="adisc" type="button">Descartar</button></div></div>
+            <label>Todo el módulo</label>
+            <div class="row"><button class="btn ghost sm" id="nall" type="button">✨ Generar notas faltantes</button>
+              <button class="btn ghost sm" id="aall" type="button">🔊 Generar audios faltantes</button><span id="bstat" class="muted small"></span></div>
+            <p class="muted small" style="margin:.4rem 0 0">Las notas con IA y la voz usan funciones de Netlify (ver README). Revisa y edita el texto antes de generar el audio: cada audio consume créditos de ElevenLabs.</p>
           </details>` : ''}
           <div class="card" id="endcard" style="margin-top:1rem" hidden>
             <h3>Terminaste este módulo</h3>
@@ -330,18 +336,75 @@
       $('#afile').onchange = (e) => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; setPending(f, (f.name.split('.').pop() || 'mp3').toLowerCase().replace(/[^a-z0-9]/g, '')); };
       $('#adisc').onclick = discard;
       $('#asave').onclick = async () => {
-        if (!pending) return; const { blob, ext } = pending; const old = slides[idx].audio;
+        if (!pending) return; const { blob, ext } = pending;
         busy('Subiendo audio…');
-        try {
-          const path = `${id}/audio-${idx + 1}-${Date.now()}.${ext}`;
-          const { error } = await sb.storage.from('class-media').upload(path, blob, { contentType: blob.type || 'audio/' + ext, cacheControl: '31536000' });
-          if (error) throw error;
-          slides[idx].audio = sb.storage.from('class-media').getPublicUrl(path).data.publicUrl;
-          await persist();
-          const op = mediaPath(old); if (op) sb.storage.from('class-media').remove([op]).catch(() => {});
-          toast('Audio guardado ✓');
-        } catch (e) { console.error(e); toast('No se pudo subir el audio: ' + (e.message || e)); }
+        try { await uploadAudio(idx, blob, ext); toast('Audio guardado ✓'); }
+        catch (e) { console.error(e); toast('No se pudo subir el audio: ' + (e.message || e)); }
         busy(null); show(idx);
+      };
+      // ---- IA: notas automáticas y voz con ElevenLabs ----
+      const slideText = (sl) => (sl.html ? new DOMParser().parseFromString(sl.html, 'text/html').body.textContent : (sl.type === 'image' ? (sl.text || '') : LessonRenderer.plainText(sl))).replace(/\s+/g, ' ').trim();
+      const fn = async (name, body, asBlob) => {
+        const { data: { session } } = await sb.auth.getSession();
+        const r = await fetch('/.netlify/functions/' + name, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session.access_token }, body: JSON.stringify(body) });
+        if (!r.ok) { let e = {}; try { e = await r.json(); } catch (x) { /* */ } throw new Error(e.error || (r.status === 404 ? 'La función no está publicada en Netlify (revisa el README).' : 'Error ' + r.status)); }
+        return asBlob ? r.blob() : r.json();
+      };
+      const makeNotes = async (i) => {
+        const sl = slides[i]; const prev = i > 0 ? (slides[i - 1].notes || '') : '';
+        const img = sl.type === 'image' && /^https:/.test(sl.image || '') && slideText(sl).length < 40 ? sl.image : undefined;
+        const d = await fn('generate-notes', { title: sl.title || '', text: slideText(sl), image: img, prev });
+        return d.notes;
+      };
+      const uploadAudio = async (i, blob, ext) => {
+        const old = slides[i].audio;
+        const path = `${id}/audio-${i + 1}-${Date.now()}.${ext}`;
+        const { error } = await sb.storage.from('class-media').upload(path, blob, { contentType: blob.type || 'audio/' + ext, cacheControl: '31536000' });
+        if (error) throw error;
+        slides[i].audio = sb.storage.from('class-media').getPublicUrl(path).data.publicUrl;
+        await persist();
+        const op = mediaPath(old); if (op) sb.storage.from('class-media').remove([op]).catch(() => {});
+      };
+      $('#ngen').onclick = async () => {
+        const i = idx;
+        if ($('#ntxt').value.trim() && !confirm('Ya hay texto en las notas. ¿Reemplazarlo con uno generado por IA?')) return;
+        busy('Redactando notas con IA…');
+        try { const t = await makeNotes(i); busy(null); if (i === idx) { $('#ntxt').value = t; toast('Notas generadas: revísalas y pulsa Guardar notas.'); } }
+        catch (e) { busy(null); toast('No se pudieron generar: ' + e.message); }
+      };
+      $('#atts').onclick = async () => {
+        const t = $('#ntxt').value.trim();
+        if (t.length < 5) { toast('Escribe o genera primero las notas: son el texto que se leerá.'); return; }
+        busy('Generando voz con ElevenLabs…');
+        try { const blob = await fn('tts', { text: t }, true); busy(null); setPending(blob, 'mp3'); $('#astat').textContent = 'Escucha el audio y pulsa «Guardar este audio».'; }
+        catch (e) { busy(null); toast('No se pudo generar la voz: ' + e.message); }
+      };
+      let batchStop = false;
+      $('#nall').onclick = async () => {
+        const todo = slides.map((sl, i) => i).filter((i) => !(slides[i].notes || '').trim() && (slideText(slides[i]).length >= 15 || slides[i].type === 'image'));
+        if (!todo.length) { toast('Todas las diapositivas ya tienen notas.'); return; }
+        if (!confirm(`Se redactarán notas con IA para ${todo.length} diapositivas sin notas. Las que ya tienen notas no se tocan. ¿Continuar?`)) return;
+        let ok = 0;
+        for (const [n, i] of todo.entries()) {
+          $('#bstat').textContent = `Notas ${n + 1}/${todo.length}…`;
+          try { slides[i].notes = await makeNotes(i); ok++; if (ok % 5 === 0) await persist(); }
+          catch (e) { toast('Se detuvo en la diapositiva ' + (i + 1) + ': ' + e.message); break; }
+        }
+        try { await persist(); } catch (e) { toast('No se pudo guardar: ' + e.message); }
+        $('#bstat').textContent = `${ok} notas generadas. Revísalas diapositiva por diapositiva.`; show(idx);
+      };
+      $('#aall').onclick = async () => {
+        const todo = slides.map((sl, i) => i).filter((i) => (slides[i].notes || '').trim().length >= 5 && !slides[i].audio);
+        if (!todo.length) { toast('No hay diapositivas con notas y sin audio.'); return; }
+        const chars = todo.reduce((a, i) => a + slides[i].notes.length, 0);
+        if (!confirm(`Se generarán ${todo.length} audios con ElevenLabs (≈ ${chars.toLocaleString('es')} caracteres de crédito). ¿Continuar?`)) return;
+        let ok = 0;
+        for (const [n, i] of todo.entries()) {
+          $('#bstat').textContent = `Audio ${n + 1}/${todo.length}…`;
+          try { const blob = await fn('tts', { text: slides[i].notes }, true); await uploadAudio(i, blob, 'mp3'); ok++; }
+          catch (e) { toast('Se detuvo en la diapositiva ' + (i + 1) + ': ' + e.message); break; }
+        }
+        $('#bstat').textContent = `${ok} audios generados y guardados.`; show(idx);
       };
       $('#adel').onclick = async () => {
         if (!confirm('¿Quitar el audio de esta diapositiva?')) return;

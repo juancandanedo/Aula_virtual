@@ -59,3 +59,19 @@ En **Administración → Editar materia → Crear/Editar quiz** hay una tarjeta 
 - Las notas del PowerPoint o del paquete .zip se importan al subir la clase (la app pregunta si se muestran a los estudiantes).
 - El administrador puede, en cualquier diapositiva, escribir o editar las notas y grabar o subir un audio (panel «Notas y audio de esta diapositiva», debajo de la diapositiva). No requiere cambios en Supabase: se guardan en la misma columna `slides` y el audio en el bucket `class-media`.
 - «Reemplazar PPT» crea de nuevo las diapositivas: las notas escritas a mano y los audios de ese módulo se pierden.
+
+## Notas automáticas con IA y voz con ElevenLabs
+En el editor de cada diapositiva (solo administrador):
+- **✨ Generar notas con IA**: Claude redacta un guion de ~90 palabras a partir del contenido de la diapositiva (si es una imagen sin texto, la lee). Se carga en el cuadro de notas: lo revisas, lo editas y pulsas *Guardar notas*.
+- **🔊 Voz con ElevenLabs**: convierte el texto del cuadro de notas en un MP3; lo escuchas y pulsas *Guardar este audio* (o lo descartas).
+- **Todo el módulo**: *Generar notas faltantes* (solo las que están vacías) y *Generar audios faltantes* (las que tienen notas y no tienen audio; avisa los caracteres que consumirá). Grabar tu propia voz o subir un archivo sigue funcionando igual.
+
+Configuración en Netlify → Site configuration → Environment variables:
+| Variable | Para qué |
+|---|---|
+| `ANTHROPIC_API_KEY` | notas con IA (la misma de los quices) |
+| `ELEVENLABS_API_KEY` | voz (secreta; nunca va en el navegador) |
+| `ELEVENLABS_VOICE_ID` | la voz a usar (ID de ElevenLabs → Voices) |
+| `ELEVENLABS_MODEL` | opcional; por defecto `eleven_multilingual_v2` |
+
+Después de agregar las variables, haz un nuevo deploy. Las funciones son `netlify/functions/generate-notes.js` y `tts.js`; ambas verifican que quien llama sea administrador. Cada audio admite hasta 4 000 caracteres.

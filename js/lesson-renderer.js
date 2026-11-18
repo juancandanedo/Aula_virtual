@@ -1,6 +1,6 @@
 /* Renderizador de lecciones JSON (formato "aula-lesson v1").
    render(slide, meta, n) -> HTML de una diapositiva de 1280x720 px (clase .lsl).
-   Tipos: cover, cards, numbered, compare, stats, process, formula, chart, rows, image. */
+   Tipos: cover, section, table, illus, cards, numbered, compare, stats, process, formula, chart, rows, image. */
 (function (root) {
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const tone = (t) => ({ ora: 'ora', wat: 'wat', grn: 'grn', red: 'red', sky: 'sky', navy: 'navy' }[t] || 'lig');
@@ -20,11 +20,22 @@
   function wrap(s, meta, n, inner) {
     return `<div class="lsl">${head(s, meta, n)}<div class="bd">${inner}${note(s)}</div>${foot(meta, n)}</div>`;
   }
+    // SVG propio del autor (lesson.json): se limpia de scripts, eventos y enlaces
+  const cleanSvg = (x) => {
+    x = String(x || ''); if (!/^\s*<svg[\s>]/i.test(x)) return '';
+    return x.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<foreignObject[\s\S]*?<\/foreignObject>/gi, '')
+      .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*')/gi, '').replace(/\s(xlink:)?href\s*=\s*("[^"]*"|'[^']*')/gi, '');
+  };
   const badge = (b, t) => (b ? `<i class="bg ${t || ''}">${esc(b)}</i>` : '');
 
   const T = {
     section(s) {
       return `<div class="lsl sec"><div class="sk">${esc(s.kicker || '')}</div><h1>${esc(s.title || '')}</h1>${s.subtitle ? `<p>${esc(s.subtitle)}</p>` : ''}</div>`;
+    },
+    illus(s, meta, n) {
+      const items = (s.items || []).map((it) => `<div class="cd ${tone(it.tone)}"><b>${esc(it.head)}</b>${it.body ? `<span>${esc(it.body)}</span>` : ''}</div>`).join('');
+      const inner = `<div class="il"><div class="fig${items ? '' : ' wide'}">${cleanSvg(s.svg)}</div>${items ? `<div class="tx">${items}</div>` : ''}</div>`;
+      return wrap(s, meta, n, inner);
     },
     table(s, meta, n) {
       const al = s.align || [];
@@ -120,7 +131,7 @@
     const out = [];
     (function walk(v, k) {
       if (v == null) return;
-      if (typeof v === 'string') { if (!['type', 'tone', 'image', 'logo', 'badgeTone', 'noteTone'].includes(k)) out.push(v); }
+      if (typeof v === 'string') { if (k === 'svg') { const t = (v.match(/<(text|title|desc)[^>]*>([^<]+)</g) || []).map((m) => m.replace(/<[^>]+>/, '').replace(/<$/, '')); if (t.length) out.push(t.join(' ')); } else if (!['type', 'tone', 'image', 'logo', 'badgeTone', 'noteTone'].includes(k)) out.push(v); }
       else if (Array.isArray(v)) v.forEach((x) => walk(x, k));
       else if (typeof v === 'object') Object.keys(v).forEach((kk) => { if (kk !== 'notes') walk(v[kk], kk); });
     })(slide);
