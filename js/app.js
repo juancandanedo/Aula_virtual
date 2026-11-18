@@ -218,7 +218,10 @@
           <div class="stage-wrap" id="wrap"><div class="stage" id="stage"><div class="inner" id="inner"></div></div></div>
           <div class="controls">
             <div class="row"><button class="btn ghost" id="prev">← Anterior</button><span id="count" class="muted"></span><button class="btn" id="nextb">Siguiente →</button></div>
-            <div class="row"><button class="btn ghost sm" id="fs">Pantalla completa</button>
+            <div class="row"><button class="btn sm" id="auto" type="button" title="Avanza solo: reproduce el audio de cada diapositiva y pasa a la siguiente al terminar">▶ Modo automático</button>
+              <label class="muted small" style="margin:0;display:flex;align-items:center;gap:.3rem" title="Tiempo que se muestra una diapositiva que no tiene audio">sin audio:
+                <select id="autosecs" style="width:auto;padding:.2rem .3rem"><option value="5">5 s</option><option value="8">8 s</option><option value="12">12 s</option><option value="20">20 s</option><option value="30">30 s</option></select></label>
+              <button class="btn ghost sm" id="fs">Pantalla completa</button>
               <span id="done" class="badge ${completed ? 'ok' : ''}">${completed ? '✓ Completado' : 'En progreso'}</span></div>
           </div>
           <div class="card" id="audiocard" hidden><b>🔊 Audio de esta diapositiva</b><audio id="aud" controls preload="none" style="width:100%;margin-top:.5rem"></audio></div>
@@ -237,7 +240,8 @@
               <div class="row" style="margin-top:.4rem"><button class="btn sm" id="asave" type="button">Guardar este audio</button><button class="btn ghost sm" id="adisc" type="button">Descartar</button></div></div>
             <label>Todo el módulo</label>
             <div class="row"><button class="btn ghost sm" id="nall" type="button">✨ Generar notas faltantes</button>
-              <button class="btn ghost sm" id="aall" type="button">🔊 Generar audios faltantes</button><span id="bstat" class="muted small"></span></div>
+              <button class="btn ghost sm" id="aall" type="button">🔊 Generar audios faltantes</button>
+              <button class="btn danger sm" id="nclr" type="button">Borrar todas las notas</button><span id="bstat" class="muted small"></span></div>
             <p class="muted small" style="margin:.4rem 0 0">Las notas con IA y la voz usan funciones de Netlify (ver README). Revisa y edita el texto antes de generar el audio: cada audio consume créditos de ElevenLabs.</p>
           </details>` : ''}
           <div class="card" id="endcard" style="margin-top:1rem" hidden>
@@ -268,7 +272,7 @@
     }
     function show(i) {
       if (!slides.length) { inner.innerHTML = '<p style="padding:2rem">Este módulo no tiene diapositivas.</p>'; return; }
-      idx = Math.max(0, Math.min(slides.length - 1, i));
+      const prevIdx = idx; idx = Math.max(0, Math.min(slides.length - 1, i));
       inner.innerHTML = slides[idx].html || LessonRenderer.render(slides[idx], { footer: slides[idx].footer }, idx + 1);
       $('#count').textContent = `${idx + 1} / ${slides.length}`;
       const nt = slides[idx].notes || '';
@@ -280,7 +284,32 @@
       $('#endcard').hidden = !last;
       if (last) markDone();
       const active = $('.side button.on'); if (active && active.scrollIntoView) active.scrollIntoView({ block: 'nearest' });
+      if (autoOn && (idx !== prevIdx || autoKick)) { autoKick = false; autoStep(); }
     }
+    // ---- modo automático: reproduce el audio y avanza solo ----
+    let autoOn = false, autoKick = false, autoTimer = null;
+    const autoSel = $('#autosecs'); try { const v = localStorage.getItem('aula-autosecs'); if (v) autoSel.value = v; } catch (e) { /* */ }
+    autoSel.onchange = () => { try { localStorage.setItem('aula-autosecs', autoSel.value); } catch (e) { /* */ } };
+    function autoNext() {
+      clearTimeout(autoTimer); if (!autoOn) return;
+      if (idx >= slides.length - 1) { autoStop(); toast('Fin del módulo.'); return; }
+      show(idx + 1);
+    }
+    function autoStep() {
+      clearTimeout(autoTimer); const au = $('#aud');
+      const wait = () => { const words = ((slides[idx].notes || '').match(/\S+/g) || []).length; autoTimer = setTimeout(autoNext, Math.max(+autoSel.value, words * 0.42) * 1000); };
+      if (slides[idx].audio) {
+        const p = au.play();
+        if (p && p.catch) p.catch(() => { toast('El navegador bloqueó la reproducción automática; avanzo por tiempo.'); wait(); });
+      } else wait();
+    }
+    function autoStop() { autoOn = false; clearTimeout(autoTimer); const au = $('#aud'); if (au) au.pause(); const b = $('#auto'); if (b) { b.textContent = '▶ Modo automático'; b.classList.remove('danger'); } }
+    $('#aud').addEventListener('ended', () => { if (autoOn) autoTimer = setTimeout(autoNext, 900); });
+    $('#auto').onclick = () => {
+      if (autoOn) { autoStop(); return; }
+      autoOn = true; autoKick = true; $('#auto').textContent = '■ Detener automático'; $('#auto').classList.add('danger');
+      if (idx >= slides.length - 1) show(0); else show(idx);
+    };
     $('#prev').onclick = () => show(idx - 1);
     $('#nextb').onclick = () => show(idx + 1);
     $('#fs').onclick = () => { if (document.fullscreenElement) document.exitFullscreen(); else wrap.requestFullscreen && wrap.requestFullscreen(); };
@@ -293,7 +322,7 @@
     document.addEventListener('keydown', onKey);
     window.addEventListener('resize', fit);
     document.addEventListener('fullscreenchange', fit);
-    cleanup = () => { try { stopRec(true); } catch (e) {} document.removeEventListener('keydown', onKey); window.removeEventListener('resize', fit); document.removeEventListener('fullscreenchange', fit); };
+    cleanup = () => { try { autoStop(); } catch (e) {} try { stopRec(true); } catch (e) {} document.removeEventListener('keydown', onKey); window.removeEventListener('resize', fit); document.removeEventListener('fullscreenchange', fit); };
     // ---- editor de notas y audio (administrador) ----
     let rec = null, pending = null;
     function syncEditor() {
@@ -392,6 +421,13 @@
         }
         try { await persist(); } catch (e) { toast('No se pudo guardar: ' + e.message); }
         $('#bstat').textContent = `${ok} notas generadas. Revísalas diapositiva por diapositiva.`; show(idx);
+      };
+      $('#nclr').onclick = async () => {
+        const n = slides.filter((x) => (x.notes || '').trim()).length;
+        if (!n) { toast('Ningún slide tiene notas.'); return; }
+        if (!confirm(`Se borrarán las notas de ${n} diapositivas de este módulo (los audios no se tocan). ¿Continuar?`)) return;
+        try { slides.forEach((x) => { delete x.notes; }); await persist(); $('#bstat').textContent = 'Notas borradas.'; show(idx); toast('Notas borradas ✓'); }
+        catch (e) { toast('No se pudo guardar: ' + (e.message || e)); }
       };
       $('#aall').onclick = async () => {
         const todo = slides.map((sl, i) => i).filter((i) => (slides[i].notes || '').trim().length >= 5 && !slides[i].audio);

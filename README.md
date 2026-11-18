@@ -76,3 +76,9 @@ Configuración en Netlify → Site configuration → Environment variables:
 | `ELEVENLABS_MODEL` | opcional; por defecto `eleven_multilingual_v2` |
 
 Después de agregar las variables, haz un nuevo deploy. Las funciones son `netlify/functions/generate-notes.js` y `tts.js`; ambas verifican que quien llama sea administrador. Cada audio admite hasta 4 000 caracteres.
+
+## Modo automático
+Debajo de la diapositiva, **▶ Modo automático** reproduce el audio de cada diapositiva y pasa a la siguiente al terminar (con una pausa corta). Si una diapositiva no tiene audio, se muestra el tiempo elegido en «sin audio» (5–30 s; si tiene notas, se alarga según su longitud). Se detiene con **■ Detener automático** o al llegar al final. Funciona también en pantalla completa; si el navegador bloquea el audio, avanza por tiempo.
+
+## Notas
+Los ZIP que genera el optimizador ya no traen notas del orador: se generan con IA desde la app (✨) y se revisan. Para limpiar un módulo que ya tenía notas: editor → «Borrar todas las notas» (no toca los audios).
