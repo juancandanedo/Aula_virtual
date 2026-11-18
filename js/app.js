@@ -513,6 +513,21 @@
     const row = { slides, slide_w: 1280, slide_h: 720, slide_count: slides.length };
     if (replaceId) await q(sb.from('modules').update(row).eq('id', replaceId));
     else await q(sb.from('modules').insert(Object.assign({ id: modId, chapter_id: chapterId, title: lesson.title || file.name.replace(/\.(zip|json)$/i, ''), position: nextPos }, row)));
+    // quiz del capítulo incluido en el paquete (quiz.json en el .zip, o campo "quiz" en lesson.json)
+    let rawQuiz = lesson.quiz || null;
+    const qf = zip && (zip.file('quiz.json') || Object.values(zip.files).find((f) => /(^|\/)quiz\.json$/i.test(f.name)));
+    if (!rawQuiz && qf) rawQuiz = JSON.parse(await qf.async('string'));
+    if (rawQuiz) {
+      const qs = normalizeQuestions(rawQuiz);
+      let quiz = await q(sb.from('quizzes').select('*').eq('chapter_id', chapterId).maybeSingle());
+      const has = quiz ? (await q(sb.from('quiz_questions').select('id').eq('quiz_id', quiz.id))).length : 0;
+      if (has && !confirm(`Este capítulo ya tiene un quiz de ${has} preguntas.\n\n¿Reemplazarlo por las ${qs.length} preguntas del paquete?\n\nAceptar = reemplazar · Cancelar = conservar el actual`)) return;
+      const meta = { title: (rawQuiz && rawQuiz.title) || 'Quiz del capítulo', pass_score: (rawQuiz && rawQuiz.pass_score) || 70 };
+      if (!quiz) quiz = await q(sb.from('quizzes').insert(Object.assign({ chapter_id: chapterId }, meta)).select().single());
+      else await q(sb.from('quizzes').update(meta).eq('id', quiz.id));
+      await q(sb.from('quiz_questions').delete().eq('quiz_id', quiz.id));
+      await q(sb.from('quiz_questions').insert(qs.map((x, i) => Object.assign({ quiz_id: quiz.id, position: i }, x))));
+    }
   }
 
   async function importPptx(chapterId, file, replaceId, nextPos) {

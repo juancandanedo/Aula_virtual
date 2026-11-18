@@ -23,8 +23,19 @@
   const badge = (b, t) => (b ? `<i class="bg ${t || ''}">${esc(b)}</i>` : '');
 
   const T = {
+    section(s) {
+      return `<div class="lsl sec"><div class="sk">${esc(s.kicker || '')}</div><h1>${esc(s.title || '')}</h1>${s.subtitle ? `<p>${esc(s.subtitle)}</p>` : ''}</div>`;
+    },
+    table(s, meta, n) {
+      const al = s.align || [];
+      const cell = (v, i, t) => `<${t} class="${al[i] || (i ? 'r' : 'l')}">${esc(v)}</${t}>`;
+      const rows = (s.rows || []).map((r) => `<tr>${r.map((v, i) => cell(v, i, 'td')).join('')}</tr>`).join('');
+      const tot = (s.totals || []).map((r) => `<tr class="tt">${r.map((v, i) => cell(v, i, 'td')).join('')}</tr>`).join('');
+      return wrap(s, meta, n, `<div class="tw"><table class="tb"><thead><tr>${(s.head || []).map((v, i) => cell(v, i, 'th')).join('')}</tr></thead><tbody>${rows}${tot}</tbody></table></div>`);
+    },
     cover(s, meta) {
-      const img = safeUrl(s.image), logo = safeUrl(s.logo);
+      const img = safeUrl(s.image), logo = safeUrl(s.logo), ban = safeUrl(s.banner);
+      if (ban) return `<div class="lsl cover cb"><div class="bn" style="background-image:url('${ban}')"></div><div class="bt"><div class="ck">${esc(s.kicker || '')}</div><h1>${esc(s.title || '')}</h1><p class="cs">${esc(s.subtitle || '')}</p><p class="ca">${esc(s.author || '')}</p></div></div>`;
       return `<div class="lsl cover"><div class="cl">${logo ? `<img class="logo" src="${logo}" alt="">` : ''}
         <div class="ck">${esc(s.kicker || '')}</div><h1>${esc(s.title || '')}</h1><p class="cs">${esc(s.subtitle || '')}</p><p class="ca">${esc(s.author || '')}</p></div>
         ${img ? `<div class="cr" style="background-image:url('${img}')"></div>` : ''}</div>`;
@@ -64,7 +75,7 @@
       return wrap(s, meta, n, `<div class="pr">${parts.join('')}</div>`);
     },
     formula(s, meta, n) {
-      return wrap(s, meta, n, `<div class="cd ${tone(s.tone)} fm"><b class="t-${tone(s.tone)}">${esc(s.formula)}</b></div>
+      return wrap(s, meta, n, `<div class="cd ${tone(s.tone)} fm">${(Array.isArray(s.formula) ? s.formula : [s.formula]).map((f) => `<b class="t-${tone(s.tone)}${Array.isArray(s.formula) ? ' mf' : ''}">${esc(f)}</b>`).join('')}</div>
         <div class="gr c3 vars">${(s.vars || []).map((v) => `<div class="cd lig"><b>${esc(v[0])}</b><small>${esc(v[1])}</small></div>`).join('')}</div>`);
     },
     rows(s, meta, n) {

@@ -144,3 +144,45 @@ table.t th{background:#f8fafc;font-size:.8rem;text-transform:uppercase;letter-sp
 .lsl .as .bl{font-size:23px}.lsl .as b{font-size:27px}.lsl .note b{font-size:25px}.lsl .note span{font-size:20px}.lsl .note.nsky b{font-size:25px}
 .lsl .ft,.lsl .fn{font-size:14px}
 .lsl .ps>.bg{align-self:flex-start;width:53px;height:53px;margin-bottom:14px}
+
+.lsl.sec{background:#0B2A45;color:#fff}.lsl .sk{position:absolute;left:90px;top:250px;font-size:20px;font-weight:700;color:#7FB8EE;letter-spacing:.08em;text-transform:uppercase}
+.lsl.sec h1{position:absolute;left:90px;top:290px;width:1100px;margin:0;font-size:62px;line-height:1.05}.lsl.sec p{position:absolute;left:90px;top:470px;width:1000px;margin:0;font-size:27px;color:#CFE3F7}
+.lsl.cb .bn{position:absolute;left:0;top:0;width:1280px;height:248px;background-size:cover;background-position:center}.lsl.cb .bt{position:absolute;left:68px;top:268px;width:1144px;height:440px}
+.lsl.cb .ck{position:static;margin-bottom:6px}.lsl.cb h1{position:static;font-size:48px;margin:0 0 14px}.lsl.cb .cs{position:static;width:1000px;margin-bottom:34px}.lsl.cb .ca{position:static}
+.lsl .fm{flex-direction:column;gap:10px}.lsl .fm b.mf{font-size:42px}
+.lsl .tw{flex:1;min-height:0}.lsl .tb{width:100%;border-collapse:collapse;font-size:23px}
+.lsl .tb th{background:#0B2A45;color:#fff;padding:12px 16px;font-size:20px}.lsl .tb td{padding:9px 16px;border-bottom:1px solid #D5DDE6}
+.lsl .tb .r{text-align:right}.lsl .tb .l{text-align:left}.lsl .tb .c{text-align:center}.lsl .tb tbody tr:nth-child(even){background:#F2F6FB}
+.lsl .tb tr.tt td{background:#DCEBFA;font-weight:700;color:#0B2A45;border-top:2px solid #0F6FBF}
+
+/* ===== Modo oscuro (solo la interfaz; las diapositivas conservan su diseño) ===== */
+:root{color-scheme:light}
+[data-theme=dark]{color-scheme:dark;--bg:#0f1720;--card:#18222e;--ink:#e6edf4;--muted:#93a1b0;--line:#2a3745;--brand:#5aaaf0;--brand-d:#9ccbf6;--ok:#4cc27d;--bad:#ef7d70;--warn:#f0b34a}
+[data-theme=dark] .btn{color:#06223b}
+[data-theme=dark] .btn:hover{background:#7dbbf4}
+[data-theme=dark] .btn.ghost{background:transparent;color:var(--brand)}[data-theme=dark] .btn.ghost:hover{background:#1f2e3d}
+[data-theme=dark] .btn.danger{background:transparent;color:var(--bad);border-color:#6b3a35}[data-theme=dark] .btn.danger:hover{background:#2c1d1d}
+[data-theme=dark] .topbar{background:#0a1a2a;border-bottom:1px solid #1c2c3d}
+[data-theme=dark] .topbar .btn.ghost{color:#cfe2f3;border-color:#3a5169}
+[data-theme=dark] .badge{background:#24323f;color:#b7c9da}
+[data-theme=dark] .badge.ok{background:#173825;color:#6fd69a}[data-theme=dark] .badge.warn{background:#3b2f12;color:#f0c46a}[data-theme=dark] .badge.bad{background:#3d1f1c;color:#f19a90}
+[data-theme=dark] .bar{background:#243240}
+[data-theme=dark] input,[data-theme=dark] textarea,[data-theme=dark] select{background:#111b26;border-color:#334456;color:var(--ink)}
+[data-theme=dark] input:focus,[data-theme=dark] textarea:focus,[data-theme=dark] select:focus{outline-color:#2f6aa3}
+[data-theme=dark] .chapter>header{background:#1d2a38}
+[data-theme=dark] .item .ic{background:#263441}
+[data-theme=dark] .item.quiz{background:#241f12}
+[data-theme=dark] .side,[data-theme=dark] .modal{background:var(--card)}
+[data-theme=dark] .side button:hover{background:#223040}[data-theme=dark] .side button.on{background:#1d3a57;color:#cfe6fb}
+[data-theme=dark] .stage-wrap{background:#0a1118}
+[data-theme=dark] .opt:hover{background:#1f2d3b}
+[data-theme=dark] .opt.right{background:#173825;border-color:#2f7a4d}[data-theme=dark] .opt.wrong{background:#3d1f1c;border-color:#8a4540}
+[data-theme=dark] .expl{background:#1b2c3e;color:#b7d3ee}
+[data-theme=dark] table.t th{background:#1d2a38}
+[data-theme=dark] .tabs a{background:#24323f;color:#b7c9da}[data-theme=dark] .tabs a.on{background:var(--brand);color:#06223b}
+[data-theme=dark] .toast{background:#e6edf4;color:#0f1720}
+[data-theme=dark] .modal-bg{background:rgba(0,0,0,.65)}
+[data-theme=dark] .qedit{background:#141e29}
+[data-theme=dark] .subject-card:hover{box-shadow:0 6px 18px rgba(0,0,0,.5)}
+.theme-toggle{position:fixed;right:14px;bottom:14px;z-index:60;width:42px;height:42px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:1.15rem;line-height:1;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,.25);display:grid;place-items:center;padding:0}
+.theme-toggle:hover{border-color:var(--brand)}
