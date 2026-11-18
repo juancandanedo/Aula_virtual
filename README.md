@@ -54,3 +54,8 @@ En **Administración → Editar materia → Crear/Editar quiz** hay una tarjeta 
 **B) Sin costo extra (con Claude en el chat)**
 1. Pulsa **Copiar prompt para Claude**, pégalo en un chat de Claude y **adjunta el/los .pptx** (necesario si tus diapositivas son imágenes).
 2. Copia el arreglo JSON que te devuelva y pulsa **Importar preguntas (JSON)**.
+
+## Notas y audio por diapositiva
+- Las notas del PowerPoint o del paquete .zip se importan al subir la clase (la app pregunta si se muestran a los estudiantes).
+- El administrador puede, en cualquier diapositiva, escribir o editar las notas y grabar o subir un audio (panel «Notas y audio de esta diapositiva», debajo de la diapositiva). No requiere cambios en Supabase: se guardan en la misma columna `slides` y el audio en el bucket `class-media`.
+- «Reemplazar PPT» crea de nuevo las diapositivas: las notas escritas a mano y los audios de ese módulo se pierden.

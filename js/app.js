@@ -191,6 +191,9 @@
     </div>`;
   }
 
+  const sideMarks = (s) => (s.notes ? ' <em class="nt" title="Tiene notas">✎</em>' : '') + (s.audio ? ' <em class="nt" title="Tiene audio">🔊</em>' : '');
+  const mediaPath = (url) => { const m = /\/class-media\/(.+?)(\?|$)/.exec(url || ''); return m ? decodeURIComponent(m[1]) : null; };
+
   async function moduleView(id) {
     shell('<div class="wrap"><p class="loading">Cargando…</p></div>', 'home');
     const mod = await q(sb.from('modules').select('*').eq('id', id).single());
@@ -209,7 +212,7 @@
 
     $('#page').innerHTML = `
       <div class="viewer">
-        <aside class="side">${slides.map((s, i) => `<button data-i="${i}"><span>${i + 1}</span>${esc(s.title || 'Diapositiva ' + (i + 1))}${s.notes ? ' <em class="nt" title="Tiene notas">✎</em>' : ''}</button>`).join('')}</aside>
+        <aside class="side">${slides.map((s, i) => `<button data-i="${i}"><span>${i + 1}</span>${esc(s.title || 'Diapositiva ' + (i + 1))}${sideMarks(s)}</button>`).join('')}</aside>
         <main>
           <div class="crumbs"><a href="#/">Mis materias</a> › <a href="#/s/${subject.id}">${esc(subject.title)}</a> › ${esc(chapter.title)} › <b>${esc(mod.title)}</b></div>
           <div class="stage-wrap" id="wrap"><div class="stage" id="stage"><div class="inner" id="inner"></div></div></div>
@@ -218,7 +221,19 @@
             <div class="row"><button class="btn ghost sm" id="fs">Pantalla completa</button>
               <span id="done" class="badge ${completed ? 'ok' : ''}">${completed ? '✓ Completado' : 'En progreso'}</span></div>
           </div>
+          <div class="card" id="audiocard" hidden><b>🔊 Audio de esta diapositiva</b><audio id="aud" controls preload="none" style="width:100%;margin-top:.5rem"></audio></div>
           <details class="card notes" id="notes" hidden open><summary>Notas de la clase</summary><div id="notesbody"></div></details>
+          ${isAdmin() ? `<details class="card" id="editor"><summary><b>✏️ Notas y audio de esta diapositiva</b> <span class="muted small">(solo administrador)</span></summary>
+            <label for="ntxt">Notas (los estudiantes las ven debajo de la diapositiva; déjalo vacío para no mostrar notas)</label>
+            <textarea id="ntxt" rows="5" placeholder="Escribe aquí las notas de esta diapositiva…"></textarea>
+            <div class="row" style="margin-top:.5rem"><button class="btn sm" id="nsave">Guardar notas</button></div>
+            <label>Audio</label>
+            <div class="row"><button class="btn sm" id="arec" type="button">● Grabar</button><button class="btn sm danger" id="astop" type="button" hidden>■ Detener</button>
+              <label class="btn ghost sm" style="margin:0;font-weight:400">Subir archivo<input type="file" id="afile" accept="audio/*" hidden></label>
+              <button class="btn danger sm" id="adel" type="button" hidden>Quitar audio actual</button><span id="astat" class="muted small"></span></div>
+            <div id="apend" hidden style="margin-top:.6rem"><audio id="apre" controls style="width:100%"></audio>
+              <div class="row" style="margin-top:.4rem"><button class="btn sm" id="asave" type="button">Guardar este audio</button><button class="btn ghost sm" id="adisc" type="button">Descartar</button></div></div>
+          </details>` : ''}
           <div class="card" id="endcard" style="margin-top:1rem" hidden>
             <h3>Terminaste este módulo</h3>
             <div class="row">
@@ -252,6 +267,8 @@
       $('#count').textContent = `${idx + 1} / ${slides.length}`;
       const nt = slides[idx].notes || '';
       $('#notes').hidden = !nt; $('#notesbody').innerHTML = nt ? nt.split(/\n+/).map((p) => `<p>${esc(p)}</p>`).join('') : '';
+      const au = $('#aud'); au.pause(); const hasA = !!slides[idx].audio; $('#audiocard').hidden = !hasA; if (hasA) au.src = slides[idx].audio; else au.removeAttribute('src');
+      syncEditor();
       $$('.side button').forEach((b) => b.classList.toggle('on', +b.dataset.i === idx));
       const last = idx === slides.length - 1;
       $('#endcard').hidden = !last;
@@ -270,7 +287,69 @@
     document.addEventListener('keydown', onKey);
     window.addEventListener('resize', fit);
     document.addEventListener('fullscreenchange', fit);
-    cleanup = () => { document.removeEventListener('keydown', onKey); window.removeEventListener('resize', fit); document.removeEventListener('fullscreenchange', fit); };
+    cleanup = () => { try { stopRec(true); } catch (e) {} document.removeEventListener('keydown', onKey); window.removeEventListener('resize', fit); document.removeEventListener('fullscreenchange', fit); };
+    // ---- editor de notas y audio (administrador) ----
+    let rec = null, pending = null;
+    function syncEditor() {
+      if (!isAdmin()) return;
+      stopRec(true); discard();
+      $('#ntxt').value = slides[idx].notes || '';
+      $('#adel').hidden = !slides[idx].audio;
+      $('#astat').textContent = slides[idx].audio ? 'Esta diapositiva ya tiene audio.' : '';
+    }
+    function refreshSide() { const b = $(`.side button[data-i="${idx}"]`); if (b) b.innerHTML = `<span>${idx + 1}</span>${esc(slides[idx].title || 'Diapositiva ' + (idx + 1))}${sideMarks(slides[idx])}`; }
+    async function persist() { await q(sb.from('modules').update({ slides }).eq('id', id)); refreshSide(); }
+    function discard() { if (pending) URL.revokeObjectURL(pending.url); pending = null; const a = $('#apend'); if (a) { a.hidden = true; $('#apre').removeAttribute('src'); } }
+    function setPending(blob, ext) {
+      if (blob.size > 40 * 1024 * 1024) { toast('El audio pesa más de 40 MB. Comprímelo o divídelo.'); return; }
+      discard(); pending = { blob, ext, url: URL.createObjectURL(blob) };
+      $('#apre').src = pending.url; $('#apend').hidden = false;
+    }
+    function stopRec(silent) {
+      const r0 = rec;
+      if (r0 && r0.state !== 'inactive') { if (silent) r0.onstop = () => r0.stream && r0.stream.getTracks().forEach((t) => t.stop()); r0.stop(); }
+      rec = null; const r = $('#arec'), st = $('#astop'); if (r) { r.hidden = false; st.hidden = true; }
+    }
+    if (isAdmin()) {
+      $('#nsave').onclick = async () => {
+        const v = $('#ntxt').value.trim();
+        try { if (v) slides[idx].notes = v; else delete slides[idx].notes; await persist(); show(idx); toast(v ? 'Notas guardadas ✓' : 'Notas eliminadas'); }
+        catch (e) { toast('No se pudo guardar: ' + (e.message || e)); }
+      };
+      $('#arec').onclick = async () => {
+        if (!navigator.mediaDevices || !window.MediaRecorder) { toast('Este navegador no permite grabar. Sube un archivo de audio.'); return; }
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const chunks = []; rec = new MediaRecorder(stream);
+          rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+          rec.stream = stream; rec.onstop = () => { stream.getTracks().forEach((t) => t.stop()); const type = rec.mimeType || chunks[0].type || 'audio/webm'; const ext = /mp4|aac/.test(type) ? 'm4a' : /ogg/.test(type) ? 'ogg' : 'webm'; setPending(new Blob(chunks, { type }), ext); $('#astat').textContent = ''; };
+          rec.start(); $('#arec').hidden = true; $('#astop').hidden = false; $('#astat').textContent = '● Grabando… habla ahora.';
+        } catch (e) { toast('No se pudo acceder al micrófono: ' + (e.message || e)); }
+      };
+      $('#astop').onclick = () => { const r = rec; if (r && r.state !== 'inactive') r.stop(); $('#arec').hidden = false; $('#astop').hidden = true; rec = null; };
+      $('#afile').onchange = (e) => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; setPending(f, (f.name.split('.').pop() || 'mp3').toLowerCase().replace(/[^a-z0-9]/g, '')); };
+      $('#adisc').onclick = discard;
+      $('#asave').onclick = async () => {
+        if (!pending) return; const { blob, ext } = pending; const old = slides[idx].audio;
+        busy('Subiendo audio…');
+        try {
+          const path = `${id}/audio-${idx + 1}-${Date.now()}.${ext}`;
+          const { error } = await sb.storage.from('class-media').upload(path, blob, { contentType: blob.type || 'audio/' + ext, cacheControl: '31536000' });
+          if (error) throw error;
+          slides[idx].audio = sb.storage.from('class-media').getPublicUrl(path).data.publicUrl;
+          await persist();
+          const op = mediaPath(old); if (op) sb.storage.from('class-media').remove([op]).catch(() => {});
+          toast('Audio guardado ✓');
+        } catch (e) { console.error(e); toast('No se pudo subir el audio: ' + (e.message || e)); }
+        busy(null); show(idx);
+      };
+      $('#adel').onclick = async () => {
+        if (!confirm('¿Quitar el audio de esta diapositiva?')) return;
+        try { const op = mediaPath(slides[idx].audio); delete slides[idx].audio; await persist(); if (op) sb.storage.from('class-media').remove([op]).catch(() => {}); toast('Audio eliminado'); }
+        catch (e) { toast('No se pudo quitar: ' + (e.message || e)); }
+        show(idx);
+      };
+    }
     fit(); show(0);
   }
 
