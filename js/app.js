@@ -452,13 +452,30 @@
     } catch (e) { /* no es crítico */ }
   }
 
+  // Comprime imágenes pesadas (PNG/JPG grandes) a WebP y limita su ancho, para que las clases carguen rápido
+  async function optimizeImage(blob, ext) {
+    try {
+      if (!['png', 'jpg', 'jpeg', 'bmp'].includes(ext) || blob.size < 120 * 1024 || !window.createImageBitmap) return { blob, ext };
+      const bmp = await createImageBitmap(blob);
+      const MAX = 2000;
+      const k = Math.min(1, MAX / Math.max(bmp.width, bmp.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+      c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+      const out = await new Promise((r) => c.toBlob(r, 'image/webp', 0.86));
+      if (out && out.type === 'image/webp' && out.size < blob.size * 0.9) return { blob: out, ext: 'webp' };
+    } catch (e) { /* si falla, se sube el original */ }
+    return { blob, ext };
+  }
+
   async function importPptx(chapterId, file, replaceId, nextPos) {
     if (!/\.pptx$/i.test(file.name)) throw new Error(`"${file.name}" no es .pptx (guarda el .ppt antiguo como .pptx primero)`);
     const modId = replaceId || crypto.randomUUID();
     busy(`Convirtiendo "${file.name}"…`);
     const res = await PptxConverter.convert(file, {
       onProgress: (i, n) => busyMsg(`"${file.name}": diapositiva ${Math.min(i + 1, n)} de ${n}…`),
-      onImage: async (blob, ext) => {
+      onImage: async (blob0, ext0) => {
+        const { blob, ext } = await optimizeImage(blob0, ext0);
         const path = `${modId}/${crypto.randomUUID()}.${ext}`;
         const { error } = await sb.storage.from('class-media').upload(path, blob, { contentType: blob.type, cacheControl: '31536000' });
         if (error) throw error;

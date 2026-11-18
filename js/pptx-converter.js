@@ -92,12 +92,15 @@
     if (solid) { const c = colorOf(solid, ctx); return c ? c : ''; }
     const grad = kid(spPr, 'gradFill');
     if (grad) {
-      const stops = kids(kid(grad, 'gsLst'), 'gs').map((gs) => colorOf(gs, ctx)).filter(Boolean);
+      const stops = kids(kid(grad, 'gsLst'), 'gs')
+        .map((gs) => ({ c: colorOf(gs, ctx), pos: num(gs, 'pos', 0) / 1000 }))
+        .filter((x) => x.c)
+        .sort((a, b) => a.pos - b.pos);
       if (stops.length >= 2) {
         const ang = num(kid(grad, 'lin'), 'ang', 5400000) / 60000;
-        return `linear-gradient(${ang + 90}deg, ${stops.join(',')})`;
+        return `linear-gradient(${(ang + 90) % 360}deg, ${stops.map((x) => `${x.c} ${x.pos}%`).join(',')})`;
       }
-      if (stops.length === 1) return stops[0];
+      if (stops.length === 1) return stops[0].c;
     }
     return '';
   }
@@ -345,6 +348,18 @@
     }
     let css = `position:absolute;${b.css}box-sizing:border-box;`;
     if (bg && bg !== 'transparent') css += `background:${bg};`;
+    // imagen usada como relleno de la forma (típico de PowerPoints exportados desde Canva)
+    let bgImg = '';
+    const fillBlip = kid(spPr, 'blipFill', 'blip');
+    if (fillBlip) {
+      const frel = part.rels[at(fillBlip, 'r:embed')];
+      const furl = frel ? await ctx.mediaUrl(frel.target) : null;
+      if (furl) {
+        const crop = kid(spPr, 'blipFill', 'srcRect');
+        bgImg = `background-image:url('${esc(furl)}');background-repeat:no-repeat;` + (crop && (num(crop, 'l', 0) || num(crop, 't', 0) || num(crop, 'r', 0) || num(crop, 'b', 0)) ? 'background-size:cover;background-position:center;' : 'background-size:100% 100%;');
+        css += bgImg;
+      }
+    }
 
     // borde
     const ln = kid(spPr, 'ln');
@@ -370,7 +385,7 @@
       const fontRefColor = style ? colorOf(kid(style, 'fontRef'), ctx) : null;
       inner = renderText(txBody, sp, part, sctx, { fontRefColor, isPh: !!ph, phType: ph ? at(ph, 'type') : null, titleBox: o.titleBox, autoShape: !ph && !!style && !kid(sp, 'nvSpPr', 'cNvSpPr') .hasAttribute('txBox') });
     }
-    if (!inner && !(bg && bg !== 'transparent') && !lineColor) return '';
+    if (!inner && !(bg && bg !== 'transparent') && !lineColor && !bgImg) return '';
     const bodyPr = kid(txBody, 'bodyPr');
     const l = num(bodyPr, 'lIns', 91440), t = num(bodyPr, 'tIns', 45720), r = num(bodyPr, 'rIns', 91440), bt = num(bodyPr, 'bIns', 45720);
     const anchor = { t: 'flex-start', ctr: 'center', b: 'flex-end' }[at(bodyPr, 'anchor') || 't'] || 'flex-start';
