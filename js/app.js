@@ -273,6 +273,7 @@
     function show(i) {
       if (!slides.length) { inner.innerHTML = '<p style="padding:2rem">Este módulo no tiene diapositivas.</p>'; return; }
       const prevIdx = idx; idx = Math.max(0, Math.min(slides.length - 1, i));
+      if (idx !== prevIdx || autoKick) { autoGen++; clearTimeout(autoTimer); }
       inner.innerHTML = slides[idx].html || LessonRenderer.render(slides[idx], { footer: slides[idx].footer }, idx + 1);
       $('#count').textContent = `${idx + 1} / ${slides.length}`;
       const nt = slides[idx].notes || '';
@@ -287,7 +288,7 @@
       if (autoOn && (idx !== prevIdx || autoKick)) { autoKick = false; autoStep(); }
     }
     // ---- modo automático: reproduce el audio y avanza solo ----
-    let autoOn = false, autoKick = false, autoTimer = null;
+    let autoOn = false, autoKick = false, autoTimer = null, autoGen = 0;
     const autoSel = $('#autosecs'); try { const v = localStorage.getItem('aula-autosecs'); if (v) autoSel.value = v; } catch (e) { /* */ }
     autoSel.onchange = () => { try { localStorage.setItem('aula-autosecs', autoSel.value); } catch (e) { /* */ } };
     function autoNext() {
@@ -296,15 +297,18 @@
       show(idx + 1);
     }
     function autoStep() {
-      clearTimeout(autoTimer); const au = $('#aud');
-      const wait = () => { const words = ((slides[idx].notes || '').match(/\S+/g) || []).length; autoTimer = setTimeout(autoNext, Math.max(+autoSel.value, words * 0.42) * 1000); };
+      clearTimeout(autoTimer); const au = $('#aud'); const g = autoGen;
+      const ap = $('#apre'); if (ap) ap.pause();
+      const wait = () => { const words = ((slides[idx].notes || '').match(/\S+/g) || []).length; autoTimer = setTimeout(() => { if (g === autoGen && autoOn) autoNext(); }, Math.max(+autoSel.value, words * 0.42) * 1000); };
       if (slides[idx].audio) {
+        au.currentTime = 0;
         const p = au.play();
-        if (p && p.catch) p.catch(() => { toast('El navegador bloqueó la reproducción automática; avanzo por tiempo.'); wait(); });
+        if (p && p.catch) p.catch((err) => { if (g !== autoGen || !autoOn || (err && err.name === 'AbortError')) return; toast('El navegador bloqueó la reproducción automática; avanzo por tiempo.'); wait(); });
       } else wait();
     }
-    function autoStop() { autoOn = false; clearTimeout(autoTimer); const au = $('#aud'); if (au) au.pause(); const b = $('#auto'); if (b) { b.textContent = '▶ Modo automático'; b.classList.remove('danger'); } }
-    $('#aud').addEventListener('ended', () => { if (autoOn) autoTimer = setTimeout(autoNext, 900); });
+    function autoStop() { autoOn = false; autoGen++; clearTimeout(autoTimer); const au = $('#aud'); if (au) au.pause(); const b = $('#auto'); if (b) { b.textContent = '▶ Modo automático'; b.classList.remove('danger'); } }
+    $('#aud').addEventListener('ended', () => { if (!autoOn) return; const g = autoGen; clearTimeout(autoTimer); autoTimer = setTimeout(() => { if (g === autoGen && autoOn) autoNext(); }, 900); });
+    const apre0 = $('#apre'); if (apre0) apre0.addEventListener('play', () => { if (autoOn) autoStop(); });
     $('#auto').onclick = () => {
       if (autoOn) { autoStop(); return; }
       autoOn = true; autoKick = true; $('#auto').textContent = '■ Detener automático'; $('#auto').classList.add('danger');
@@ -352,6 +356,7 @@
         catch (e) { toast('No se pudo guardar: ' + (e.message || e)); }
       };
       $('#arec').onclick = async () => {
+        autoStop();
         if (!navigator.mediaDevices || !window.MediaRecorder) { toast('Este navegador no permite grabar. Sube un archivo de audio.'); return; }
         try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
