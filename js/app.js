@@ -248,7 +248,7 @@
     function show(i) {
       if (!slides.length) { inner.innerHTML = '<p style="padding:2rem">Este módulo no tiene diapositivas.</p>'; return; }
       idx = Math.max(0, Math.min(slides.length - 1, i));
-      inner.innerHTML = slides[idx].html;
+      inner.innerHTML = slides[idx].html || LessonRenderer.render(slides[idx], { footer: slides[idx].footer }, idx + 1);
       $('#count').textContent = `${idx + 1} / ${slides.length}`;
       const nt = slides[idx].notes || '';
       $('#notes').hidden = !nt; $('#notesbody').innerHTML = nt ? nt.split(/\n+/).map((p) => `<p>${esc(p)}</p>`).join('') : '';
@@ -395,12 +395,12 @@
             <button class="btn ghost sm" data-mren="${m.id}" data-t="${esc(m.title)}">Renombrar</button>
             <button class="btn ghost sm" data-mrepl="${m.id}" data-ch="${c.id}">Reemplazar PPT</button>
             <button class="btn danger sm" data-mdel="${m.id}">Eliminar</button></div>`).join('') || '<div class="item muted">Sin módulos. Sube un PowerPoint para crear el primero.</div>'}
-          <div class="item"><button class="btn sm" data-upload="${c.id}">⬆ Subir PowerPoint (.pptx)</button><span class="muted small">Cada archivo se convierte en un módulo.</span></div>
+          <div class="item"><button class="btn sm" data-upload="${c.id}">⬆ Subir clase (.zip / .json / .pptx)</button><span class="muted small">Recomendado: el paquete .zip del skill (liviano). Cada archivo es un módulo.</span></div>
           <div class="item quiz"><span class="ic">?</span><div class="grow"><b>Quiz del capítulo</b> <span class="muted small">· ${quiz ? (qCounts[quiz.id] || 0) + ((qCounts[quiz.id] || 0) === 1 ? ' pregunta' : ' preguntas') : 'sin crear'}</span></div>
             <a class="btn sm" href="#/admin/q/${c.id}">${quiz ? 'Editar quiz' : 'Crear quiz'}</a></div>
         </section>`;
       }).join('') || '<div class="card muted">Agrega el primer capítulo.</div>'}
-      <input type="file" id="file" accept=".pptx" multiple hidden>
+      <input type="file" id="file" accept=".pptx,.zip,.json" multiple hidden>
     </div>`;
 
     $('#s_save').onclick = async () => {
@@ -441,7 +441,7 @@
       const files = Array.from(fileInput.files); fileInput.value = '';
       if (!files.length || !target) return;
       try {
-        for (const f of files) await importPptx(target.chapterId, f, target.replaceId, modList(target.chapterId).length);
+        for (const f of files) await (/\.(zip|json)$/i.test(f.name) ? importLesson : importPptx)(target.chapterId, f, target.replaceId, modList(target.chapterId).length);
         toast('Listo ✓');
       } catch (e) { console.error(e); toast('No se pudo importar: ' + (e.message || e)); }
       busy(null); route();
@@ -469,6 +469,50 @@
       if (out && out.type === 'image/webp' && out.size < blob.size * 0.9) return { blob: out, ext: 'webp' };
     } catch (e) { /* si falla, se sube el original */ }
     return { blob, ext };
+  }
+
+  // Importa una lección liviana: .zip (lesson.json + img/…) o .json suelto (formato "aula-lesson")
+  async function importLesson(chapterId, file, replaceId, nextPos) {
+    const modId = replaceId || crypto.randomUUID();
+    busy(`Leyendo "${file.name}"…`);
+    let lesson, zip = null;
+    if (/\.zip$/i.test(file.name)) {
+      zip = await JSZip.loadAsync(file);
+      const jf = zip.file('lesson.json') || Object.values(zip.files).find((f) => /(^|\/)lesson\.json$/i.test(f.name));
+      if (!jf) throw new Error('El .zip no contiene lesson.json');
+      lesson = JSON.parse(await jf.async('string'));
+    } else lesson = JSON.parse(await file.text());
+    if (!lesson || lesson.format !== 'aula-lesson' || !Array.isArray(lesson.slides)) throw new Error('El archivo no tiene el formato aula-lesson');
+    // subir imágenes del paquete y reemplazar las rutas por URLs públicas
+    const up = {};
+    async function upload(ref) {
+      if (!ref || /^https:\/\//.test(ref) || !zip) return /^https:\/\//.test(ref || '') ? ref : '';
+      if (up[ref]) return up[ref];
+      const f = zip.file(ref); if (!f) return '';
+      const ext = (ref.split('.').pop() || 'webp').toLowerCase();
+      const blob0 = new Blob([await f.async('uint8array')], { type: ext === 'jpg' ? 'image/jpeg' : `image/${ext}` });
+      const { blob, ext: e2 } = await optimizeImage(blob0, ext);
+      const path = `${modId}/${crypto.randomUUID()}.${e2}`;
+      const { error } = await sb.storage.from('class-media').upload(path, blob, { contentType: blob.type, cacheControl: '31536000' });
+      if (error) throw error;
+      return (up[ref] = sb.storage.from('class-media').getPublicUrl(path).data.publicUrl);
+    }
+    const slides = [];
+    for (let i = 0; i < lesson.slides.length; i++) {
+      busyMsg(`"${file.name}": diapositiva ${i + 1} de ${lesson.slides.length}…`);
+      const s = Object.assign({}, lesson.slides[i]);
+      if (s.image) s.image = await upload(s.image);
+      if (s.logo) s.logo = await upload(s.logo);
+      if (lesson.footer && !s.footer) s.footer = lesson.footer;
+      if (!s.title && s.type === 'cover') s.title = lesson.title || '';
+      slides.push(s);
+    }
+    const withNotes = slides.filter((s) => s.notes).length;
+    if (withNotes && !confirm(`"${file.name}" tiene notas en ${withNotes} diapositivas.\n\n¿Mostrarlas a los estudiantes como material complementario?\n\nAceptar = mostrar · Cancelar = no incluirlas`)) slides.forEach((s) => { delete s.notes; });
+    busyMsg('Guardando…');
+    const row = { slides, slide_w: 1280, slide_h: 720, slide_count: slides.length };
+    if (replaceId) await q(sb.from('modules').update(row).eq('id', replaceId));
+    else await q(sb.from('modules').insert(Object.assign({ id: modId, chapter_id: chapterId, title: lesson.title || file.name.replace(/\.(zip|json)$/i, ''), position: nextPos }, row)));
   }
 
   async function importPptx(chapterId, file, replaceId, nextPos) {
@@ -506,12 +550,13 @@
       text += `\n## Módulo: ${m.title}\n`;
       (m.slides || []).forEach((sl, i) => {
         const doc = parser.parseFromString(sl.html || '', 'text/html');
-        const t = (doc.body.textContent || '').replace(/\s+/g, ' ').replace(/Profesor:[^.]{0,60}$/i, '').trim();
+        const t = (sl.html ? (doc.body.textContent || '') : (sl.type === 'image' ? (sl.text || '') : LessonRenderer.plainText(sl))).replace(/\s+/g, ' ').replace(/Profesor:[^.]{0,60}$/i, '').trim();
         if (t) text += `[Diapositiva ${i + 1}] ${t}\n`;
         if (sl.notes) text += `[Notas de la diapositiva ${i + 1}] ${sl.notes.replace(/\s+/g, ' ').slice(0, 1500)}\n`;
         if (t.length < 80) {
           const urls = Array.from(doc.querySelectorAll('img')).map((x) => x.getAttribute('src'));
-          (sl.html.match(/url\('([^']+)'\)/g) || []).forEach((u) => urls.push(u.slice(5, -2)));
+          if (sl.type === 'image' && sl.image) urls.push(sl.image);
+          ((sl.html || '').match(/url\('([^']+)'\)/g) || []).forEach((u) => urls.push(u.slice(5, -2)));
           urls.forEach((u) => { if (/^https:\/\//.test(u) && !images.includes(u)) images.push(u); });
         }
       });
