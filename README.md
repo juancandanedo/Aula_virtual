@@ -41,3 +41,16 @@ git push -u origin main
 - Las imágenes quedan en un bucket público con nombres aleatorios (no listables); el texto de las clases y los quices solo lo leen estudiantes matriculados.
 - Las respuestas correctas de los quices viajan al navegador del estudiante (se corrige en el cliente). Es adecuado para práctica, no para exámenes de alto riesgo.
 - Para reemplazar un PowerPoint actualizado usa **Reemplazar PPT** (conserva el orden y el progreso).
+
+## Quices con IA
+En **Administración → Editar materia → Crear/Editar quiz** hay una tarjeta "✨ Generar preguntas con IA". Siempre revisa las preguntas antes de **Guardar quiz**.
+
+**A) Automático (función de Netlify + API de Anthropic)**
+1. Crea una API key en https://console.anthropic.com (es de pago por uso, aparte de tu suscripción a Claude).
+2. En Netlify → Site configuration → Environment variables agrega `ANTHROPIC_API_KEY` (secreta). Opcional: `ANTHROPIC_MODEL` (por defecto `claude-haiku-5-5`).
+3. Haz `git push` (la función vive en `netlify/functions/generate-quiz.js`) y pulsa **Generar automáticamente**.
+- Solo el administrador puede usarla. Lee el texto de las diapositivas y, si una diapositiva es casi solo imagen (típico de Canva), le envía la imagen a la IA (máximo 20 imágenes por capítulo).
+
+**B) Sin costo extra (con Claude en el chat)**
+1. Pulsa **Copiar prompt para Claude**, pégalo en un chat de Claude y **adjunta el/los .pptx** (necesario si tus diapositivas son imágenes).
+2. Copia el arreglo JSON que te devuelva y pulsa **Importar preguntas (JSON)**.

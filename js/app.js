@@ -491,6 +491,70 @@
     }
   }
 
+
+  // ---------- generación de quices con IA ----------
+  function slideContent(mods) {
+    // Devuelve { text, images } con el texto de las diapositivas y las imágenes de las que casi no tienen texto
+    const parser = new DOMParser();
+    let text = ''; const images = [];
+    mods.sort(byPos).forEach((m) => {
+      text += `\n## Módulo: ${m.title}\n`;
+      (m.slides || []).forEach((sl, i) => {
+        const doc = parser.parseFromString(sl.html || '', 'text/html');
+        const t = (doc.body.textContent || '').replace(/\s+/g, ' ').replace(/Profesor:[^.]{0,60}$/i, '').trim();
+        if (t) text += `[Diapositiva ${i + 1}] ${t}\n`;
+        if (t.length < 80) {
+          const urls = Array.from(doc.querySelectorAll('img')).map((x) => x.getAttribute('src'));
+          (sl.html.match(/url\('([^']+)'\)/g) || []).forEach((u) => urls.push(u.slice(5, -2)));
+          urls.forEach((u) => { if (/^https:\/\//.test(u) && !images.includes(u)) images.push(u); });
+        }
+      });
+    });
+    return { text: text.slice(0, 60000), images: images.slice(0, 20) };
+  }
+
+  function normalizeQuestions(raw) {
+    let arr = raw;
+    if (arr && !Array.isArray(arr)) arr = arr.questions || arr.preguntas || [];
+    if (!Array.isArray(arr)) throw new Error('El texto no es una lista de preguntas');
+    const L = { a: 0, b: 1, c: 2, d: 3, e: 4, f: 5 };
+    const out = arr.map((q) => {
+      const options = (q.options || q.opciones || []).map((o) => String(o).replace(/^[A-Fa-f][).]\s+/, '').trim()).filter(Boolean);
+      let c = q.correct != null ? q.correct : (q.correcta != null ? q.correcta : q.respuesta);
+      if (typeof c === 'string') c = /^[a-f]$/i.test(c.trim()) ? L[c.trim().toLowerCase()] : parseInt(c, 10);
+      return { question: String(q.question || q.pregunta || '').trim(), options: options.slice(0, 6), correct: Number.isInteger(c) ? c : 0, explanation: String(q.explanation || q.explicacion || q['explicación'] || '').trim() };
+    }).filter((q) => q.question && q.options.length >= 2 && q.correct >= 0 && q.correct < q.options.length);
+    if (!out.length) throw new Error('No se encontraron preguntas válidas');
+    return out;
+  }
+
+  function buildPrompt(n, content) {
+    return `Eres un profesor experto en ingeniería. Con el material de clase que aparece al final (texto de las diapositivas; si algunas diapositivas son imágenes, usa también los PowerPoint adjuntos), crea un quiz de ${n} preguntas de opción múltiple EN ESPAÑOL.
+
+Reglas:
+- Evalúa comprensión de conceptos, normas, datos y relaciones; no preguntes por el diseño de las diapositivas ni por el profesor.
+- Usa SOLO información del material.
+- Cada pregunta: 4 opciones, exactamente una correcta; las incorrectas plausibles; varía la posición de la correcta.
+- Incluye una explicación breve (1-2 frases).
+- Responde ÚNICAMENTE con un arreglo JSON, sin texto adicional, con este formato ("correct" es el índice 0-3 de la opción correcta):
+[{"question":"...","options":["...","...","...","..."],"correct":0,"explanation":"..."}]
+
+=== MATERIAL ===
+${content}`;
+  }
+
+  function textModal(title, hint) {
+    return new Promise((resolve) => {
+      const bg = document.createElement('div'); bg.className = 'modal-bg';
+      bg.innerHTML = `<div class="modal" style="max-width:640px"><h3>${esc(title)}</h3><p class="small muted">${esc(hint)}</p>
+        <textarea id="mt" rows="12" style="font-family:monospace;font-size:.85rem"></textarea>
+        <div class="row" style="margin-top:.8rem;justify-content:flex-end"><button class="btn ghost" id="mc">Cancelar</button><button class="btn" id="mo">Importar</button></div></div>`;
+      document.body.appendChild(bg);
+      bg.querySelector('#mc').onclick = () => { bg.remove(); resolve(null); };
+      bg.querySelector('#mo').onclick = () => { const v = bg.querySelector('#mt').value; bg.remove(); resolve(v); };
+    });
+  }
+
   // ---------- editor de quiz ----------
   async function quizEditor(chapterId) {
     shell('<div class="wrap"><p class="loading">Cargando…</p></div>', 'admin');
@@ -501,6 +565,7 @@
     const st = {
       title: quiz ? quiz.title : 'Quiz: ' + chapter.title,
       pass: quiz ? quiz.pass_score : 70,
+      n: 10,
       qs: qs.map((x) => ({ question: x.question, options: [...(x.options || [])], correct: x.correct, explanation: x.explanation || '' }))
     };
     if (!st.qs.length) st.qs.push(blankQ());
@@ -512,6 +577,14 @@
         <h1>Quiz del capítulo: ${esc(chapter.title)}</h1>
         <div class="card"><div class="row"><div class="grow"><label style="margin-top:0">Título del quiz</label><input id="qt" value="${esc(st.title)}"></div>
           <div style="width:170px"><label style="margin-top:0">Nota mínima (%)</label><input id="qp" type="number" min="0" max="100" value="${st.pass}"></div></div></div>
+        <div class="card" style="border-left:5px solid #7a4fd1">
+          <h3 style="margin-bottom:.2rem">✨ Generar preguntas con IA</h3>
+          <p class="small muted" style="margin-top:0">Usa el contenido de todos los módulos de este capítulo. Siempre revisa y corrige las preguntas antes de guardar.</p>
+          <div class="row"><div style="width:120px"><label style="margin-top:0">Cantidad</label><input id="ain" type="number" min="3" max="30" value="${st.n}"></div>
+            <button class="btn" id="aigen" style="align-self:flex-end">Generar automáticamente</button>
+            <button class="btn ghost" id="aicopy" style="align-self:flex-end">Copiar prompt para Claude</button>
+            <button class="btn ghost" id="aiimp" style="align-self:flex-end">Importar preguntas (JSON)</button></div>
+        </div>
         ${st.qs.map((x, i) => `<div class="qedit">
           <div class="row sb"><b>Pregunta ${i + 1}</b><span class="row"><button class="btn ghost sm" data-qup="${i}">↑</button><button class="btn ghost sm" data-qdown="${i}">↓</button><button class="btn danger sm" data-qdel="${i}">Quitar</button></span></div>
           <textarea rows="2" data-qi="${i}" data-f="question" placeholder="Escribe la pregunta">${esc(x.question)}</textarea>
@@ -541,6 +614,50 @@
         await q(sb.from('quizzes').delete().eq('id', quiz.id)); location.hash = '#/admin/s/' + subject.id;
       };
       $('#save').onclick = save;
+      $('#ain').oninput = (e) => { st.n = Math.max(3, Math.min(30, +e.target.value || 10)); };
+
+      const addQs = (nq) => {
+        const onlyBlank = st.qs.length === 1 && !st.qs[0].question.trim();
+        if (onlyBlank) st.qs = nq;
+        else if (confirm(`Se generaron ${nq.length} preguntas.\n\nAceptar = REEMPLAZAR las preguntas actuales.\nCancelar = AGREGARLAS al final.`)) st.qs = nq;
+        else st.qs = st.qs.concat(nq);
+        render(); toast(`${nq.length} preguntas cargadas. Revísalas y pulsa Guardar quiz.`);
+      };
+      const loadContent = async () => {
+        const mods = await q(sb.from('modules').select('title,position,slides').eq('chapter_id', chapterId));
+        if (!mods.length) throw new Error('Este capítulo aún no tiene módulos');
+        return slideContent(mods);
+      };
+      $('#aigen').onclick = async () => {
+        try {
+          busy('Leyendo el contenido y generando preguntas con IA… (puede tardar hasta un minuto)');
+          const c = await loadContent();
+          const { data: { session } } = await sb.auth.getSession();
+          const r = await fetch('/.netlify/functions/generate-quiz', {
+            method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session.access_token },
+            body: JSON.stringify({ count: st.n, text: c.text, images: c.images })
+          });
+          let body = {}; try { body = await r.json(); } catch (e) { /* respuesta no JSON */ }
+          if (!r.ok) throw new Error(body.error || (r.status === 404 ? 'La función no está publicada en Netlify (revisa el README, sección Quices con IA).' : 'Error ' + r.status));
+          busy(null); addQs(normalizeQuestions(body.questions));
+        } catch (e) { busy(null); toast('No se pudo generar: ' + e.message); }
+      };
+      $('#aicopy').onclick = async () => {
+        try {
+          const c = await loadContent();
+          const prompt = buildPrompt(st.n, c.text);
+          await navigator.clipboard.writeText(prompt);
+          toast(c.images.length ? 'Prompt copiado. Algunas diapositivas son imágenes: adjunta también el .pptx en el chat de Claude.' : 'Prompt copiado. Pégalo en un chat con Claude.');
+        } catch (e) { toast('No se pudo copiar: ' + e.message); }
+      };
+      $('#aiimp').onclick = async () => {
+        const v = await textModal('Importar preguntas', 'Pega aquí el arreglo JSON que te dio Claude.');
+        if (!v) return;
+        try {
+          const m = v.match(/\[[\s\S]*\]/);
+          addQs(normalizeQuestions(JSON.parse(m ? m[0] : v)));
+        } catch (e) { toast('No se pudo importar: ' + e.message); }
+      };
     }
 
     async function save() {
