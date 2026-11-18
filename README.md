@@ -62,14 +62,15 @@ En **Administración → Editar materia → Crear/Editar quiz** hay una tarjeta 
 
 ## Notas automáticas con IA y voz con ElevenLabs
 En el editor de cada diapositiva (solo administrador):
-- **✨ Generar notas con IA**: Claude redacta un guion de ~90 palabras a partir del contenido de la diapositiva (si es una imagen sin texto, la lee). Se carga en el cuadro de notas: lo revisas, lo editas y pulsas *Guardar notas*.
+- **✨ Generar notas con IA**: OpenAI redacta un guion de ~90 palabras a partir del contenido de la diapositiva (si es una imagen sin texto, la lee). Se carga en el cuadro de notas: lo revisas, lo editas y pulsas *Guardar notas*.
 - **🔊 Voz con ElevenLabs**: convierte el texto del cuadro de notas en un MP3; lo escuchas y pulsas *Guardar este audio* (o lo descartas).
 - **Todo el módulo**: *Generar notas faltantes* (solo las que están vacías) y *Generar audios faltantes* (las que tienen notas y no tienen audio; avisa los caracteres que consumirá). Grabar tu propia voz o subir un archivo sigue funcionando igual.
 
 Configuración en Netlify → Site configuration → Environment variables:
 | Variable | Para qué |
 |---|---|
-| `ANTHROPIC_API_KEY` | notas con IA (la misma de los quices) |
+| `OPENAI_API_KEY` | notas con IA (los quices siguen usando `ANTHROPIC_API_KEY`) |
+| `OPENAI_MODEL` | opcional; por defecto `gpt-4o-mini` |
 | `ELEVENLABS_API_KEY` | voz (secreta; nunca va en el navegador) |
 | `ELEVENLABS_VOICE_ID` | la voz a usar (ID de ElevenLabs → Voices) |
 | `ELEVENLABS_MODEL` | opcional; por defecto `eleven_multilingual_v2` |
