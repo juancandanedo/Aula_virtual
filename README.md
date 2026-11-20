@@ -90,3 +90,8 @@ Los ZIP que genera el optimizador ya no traen notas del orador: se generan con I
 - El estudiante ve «✓ Capítulo cumplido» y puede imprimir su **Constancia** (botón en el capítulo).
 - En **Admin → Estudiantes → Avance por capítulo** ves el estado de cada estudiante y descargas el CSV.
 - Actualización de base de datos: ejecuta `supabase/migracion_2.sql` en el SQL Editor de Supabase (bloquea también el envío del quiz desde el servidor).
+
+## Crear estudiantes con contraseña (invitaciones)
+En **Admin → Estudiantes → Crear estudiante e invitarlo** escribes nombre, correo y contraseña (o «Generar»), marcas las materias y obtienes un texto de invitación para copiar o abrir en tu correo. El botón «Nueva contraseña» de cada estudiante le asigna una nueva.
+Requiere la función `crear-usuario` y esta variable en Netlify (Site configuration → Environment variables):
+- `SUPABASE_SERVICE_ROLE_KEY` = clave **service_role** (Supabase → Project Settings → API). Es SECRETA: nunca la pegues en el código ni en un chat.

@@ -1015,10 +1015,22 @@ ${content}`;
     const has = new Set(enr.map((e) => e.student_id + '|' + e.subject_id));
     $('#page').innerHTML = `<div class="wrap">${adminTabs('students')}
       <h1>Estudiantes</h1>
-      <p class="muted small">Los estudiantes se registran solos desde la pantalla de inicio; aquí marcas a qué materias tienen acceso (solo se ven las materias publicadas).</p>
+      <div class="card" id="newuser">
+        <h2 style="margin-top:0">Crear estudiante e invitarlo</h2>
+        <div class="row" style="gap:.6rem;flex-wrap:wrap">
+          <input id="nu-name" placeholder="Nombre completo" style="flex:1;min-width:200px">
+          <input id="nu-email" type="email" placeholder="Correo" style="flex:1;min-width:200px">
+          <input id="nu-pass" placeholder="Contraseña (mín. 8)" style="width:190px">
+          <button class="btn ghost" id="nu-gen" type="button">Generar</button>
+        </div>
+        <div class="row" style="gap:1rem;flex-wrap:wrap;margin:.6rem 0">${subjects.map((s) => `<label><input type="checkbox" class="nu-su" value="${s.id}"> ${esc(s.title)}</label>`).join('') || '<span class="muted small">Primero crea una materia.</span>'}</div>
+        <button class="btn" id="nu-go">Crear usuario</button>
+        <div id="nu-out"></div>
+      </div>
+      <p class="muted small">Los estudiantes también pueden registrarse solos desde la pantalla de inicio. Aquí marcas a qué materias tienen acceso (solo se ven las materias publicadas).</p>
       <div class="card" style="overflow:auto">
       ${students.length && subjects.length ? `<table class="t"><thead><tr><th>Estudiante</th>${subjects.map((s) => `<th>${esc(s.title)}</th>`).join('')}</tr></thead><tbody>
-        ${students.map((st) => `<tr><td><b>${esc(st.full_name || '(sin nombre)')}</b><br><span class="muted small">${esc(st.email)}</span></td>
+        ${students.map((st) => `<tr><td><b>${esc(st.full_name || '(sin nombre)')}</b><br><span class="muted small">${esc(st.email)}</span><br><button class="btn ghost sm" data-pw="${st.id}" data-em="${esc(st.email)}">Nueva contraseña</button></td>
           ${subjects.map((s) => `<td><input type="checkbox" data-st="${st.id}" data-su="${s.id}" ${has.has(st.id + '|' + s.id) ? 'checked' : ''}></td>`).join('')}</tr>`).join('')}
       </tbody></table>` : '<p class="muted">Aún no hay estudiantes registrados o no has creado materias.</p>'}
       </div>
@@ -1030,6 +1042,37 @@ ${content}`;
           <td>${esc(ch && ch.subjects ? ch.subjects.title : '')} › ${esc(ch ? ch.title : '')}</td><td><b>${pct}%</b> <span class="muted small">(${a.score}/${a.total})</span></td></tr>`; }).join('')}
       </tbody></table>` : '<p class="muted">Todavía no hay intentos.</p>'}
       </div></div>`;
+    const call = async (body) => {
+      const { data: { session } } = await sb.auth.getSession();
+      const r = await fetch('/.netlify/functions/crear-usuario', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session.access_token }, body: JSON.stringify(body) });
+      let d = {}; try { d = await r.json(); } catch (x) { /* */ }
+      if (!r.ok) throw new Error(d.error || (r.status === 404 ? 'La función no está publicada en Netlify (revisa el README).' : 'Error ' + r.status));
+      return d;
+    };
+    const genPass = () => { const a = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789'; const u = crypto.getRandomValues(new Uint32Array(10)); return Array.from(u, (n) => a[n % a.length]).join(''); };
+    const invite = (name, email, pass) => `Hola ${name || ''},\n\nTe invito al Aula Virtual.\n\nEnlace: ${location.origin}\nUsuario (correo): ${email}\nContraseña: ${pass}\n\nTe recomiendo cambiar la contraseña después de entrar.\n\nIng. Juan Carlos Candanedo`;
+    const showInvite = (name, email, pass) => {
+      const txt = invite(name, email, pass);
+      $('#nu-out').innerHTML = `<h3>Invitación lista</h3><textarea readonly rows="9" style="width:100%">${esc(txt)}</textarea>
+        <div class="row" style="gap:.5rem;margin-top:.4rem"><button class="btn" id="nu-copy">Copiar texto</button>
+        <a class="btn ghost" href="mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent('Invitación al Aula Virtual')}&body=${encodeURIComponent(txt)}">Abrir en mi correo</a></div>`;
+      $('#nu-copy').onclick = async () => { try { await navigator.clipboard.writeText(txt); toast('Copiado'); } catch (e) { toast('Selecciona el texto y cópialo'); } };
+    };
+    $('#nu-gen').onclick = () => { $('#nu-pass').value = genPass(); };
+    $('#nu-go').onclick = async () => {
+      const name = $('#nu-name').value.trim(), email = $('#nu-email').value.trim(), pass = $('#nu-pass').value;
+      const ids = [...document.querySelectorAll('.nu-su:checked')].map((c) => c.value);
+      if (!email || pass.length < 8) { toast('Escribe el correo y una contraseña de al menos 8 caracteres'); return; }
+      const b = $('#nu-go'); b.disabled = true;
+      try { await call({ action: 'create', email, password: pass, full_name: name, subject_ids: ids }); toast('Usuario creado'); showInvite(name, email, pass); }
+      catch (e) { toast(e.message); } finally { b.disabled = false; }
+    };
+    document.querySelectorAll('[data-pw]').forEach((b) => { b.onclick = async () => {
+      const pass = genPass();
+      if (!confirm('¿Asignar una nueva contraseña a ' + b.dataset.em + '?')) return;
+      try { await call({ action: 'reset', user_id: b.dataset.pw, password: pass }); $('#newuser').scrollIntoView(); $('#nu-email').value = b.dataset.em; $('#nu-pass').value = pass; showInvite('', b.dataset.em, pass); }
+      catch (e) { toast(e.message); }
+    }; });
     adminProgress(students, subjects, enr);
     on('input[data-st]', 'change', async (cb) => {
       const row = { student_id: cb.dataset.st, subject_id: cb.dataset.su };
