@@ -82,3 +82,11 @@ Debajo de la diapositiva, **▶ Modo automático** reproduce el audio de cada di
 
 ## Notas
 Los ZIP que genera el optimizador ya no traen notas del orador: se generan con IA desde la app (✨) y se revisan. Para limpiar un módulo que ya tenía notas: editor → «Borrar todas las notas» (no toca los audios).
+
+
+## Capítulo cumplido (evidencia)
+- El quiz de un capítulo se desbloquea cuando el estudiante completó todos los módulos del capítulo.
+- El capítulo cuenta como **cumplido solo si la nota alcanza el mínimo** (`pass_score` del quiz, 70 % por defecto).
+- El estudiante ve «✓ Capítulo cumplido» y puede imprimir su **Constancia** (botón en el capítulo).
+- En **Admin → Estudiantes → Avance por capítulo** ves el estado de cada estudiante y descargas el CSV.
+- Actualización de base de datos: ejecuta `supabase/migracion_2.sql` en el SQL Editor de Supabase (bloquea también el envío del quiz desde el servidor).

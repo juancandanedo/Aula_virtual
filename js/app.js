@@ -111,6 +111,7 @@
       if (p[0] === 's' && p[1]) return await subjectView(p[1]);
       if (p[0] === 'm' && p[1]) return await moduleView(p[1]);
       if (p[0] === 'q' && p[1]) return await quizView(p[1]);
+      if (p[0] === 'cert' && p[1]) return await certView(p[1]);
       if (p[0] === 'admin' && isAdmin()) {
         if (!p[1]) return await adminSubjects();
         if (p[1] === 'students') return await adminStudents();
@@ -164,22 +165,28 @@
       q(sb.from('modules').select('id,chapter_id,title,position,slide_count').in('chapter_id', chIds)),
       q(sb.from('quizzes').select('id,chapter_id,title,pass_score').in('chapter_id', chIds)),
       q(sb.from('module_progress').select('module_id').eq('student_id', me.id)),
-      q(sb.from('quiz_attempts').select('quiz_id,score,total').eq('student_id', me.id))
+      q(sb.from('quiz_attempts').select('quiz_id,score,total,created_at').eq('student_id', me.id))
     ]) : [[], [], [], []];
     const done = new Set(prog.map((x) => x.module_id));
     const best = {};
+    const passAt = {};
     attempts.forEach((a) => { const pct = Math.round((a.score / a.total) * 100); best[a.quiz_id] = Math.max(best[a.quiz_id] || 0, pct); });
+    quizzes.forEach((z) => { const ok = attempts.filter((a) => a.quiz_id === z.id && Math.round((a.score / a.total) * 100) >= z.pass_score).map((a) => a.created_at).sort(); if (ok.length) passAt[z.id] = ok[0]; });
 
     const html = chapters.map((c, ci) => {
       const mods = modules.filter((m) => m.chapter_id === c.id).sort(byPos);
       const quiz = quizzes.find((z) => z.chapter_id === c.id);
       const d = mods.filter((m) => done.has(m.id)).length;
+      const allDone = mods.length > 0 && d === mods.length;
+      const passed = quiz && passAt[quiz.id];
       return `<section class="card chapter">
-        <header class="row sb"><h2 style="margin:0">Capítulo ${ci + 1}: ${esc(c.title)}</h2><span class="badge ${mods.length && d === mods.length ? 'ok' : ''}">${d}/${mods.length} módulos</span></header>
+        <header class="row sb"><h2 style="margin:0">Capítulo ${ci + 1}: ${esc(c.title)}</h2><span>${passed ? '<span class="badge ok">✓ Capítulo cumplido</span> ' : ''}<span class="badge ${allDone ? 'ok' : ''}">${d}/${mods.length} módulos</span></span></header>
         ${mods.map((m, mi) => `<div class="item"><span class="ic ${done.has(m.id) ? 'done' : ''}">${done.has(m.id) ? '✓' : mi + 1}</span>
           <a class="grow" href="#/m/${m.id}">${esc(m.title)}</a><span class="muted small">${m.slide_count} diap.</span></div>`).join('') || '<div class="item muted">Sin módulos todavía</div>'}
-        ${quiz ? `<div class="item quiz"><span class="ic">?</span><a class="grow" href="#/q/${c.id}"><b>${esc(quiz.title)}</b></a>
-          ${best[quiz.id] != null ? `<span class="badge ${best[quiz.id] >= quiz.pass_score ? 'ok' : 'bad'}">Mejor nota: ${best[quiz.id]}%</span>` : '<span class="badge">Pendiente</span>'}</div>` : ''}
+        ${quiz ? ((allDone || isAdmin()) ? `<div class="item quiz"><span class="ic">?</span><a class="grow" href="#/q/${c.id}"><b>${esc(quiz.title)}</b></a>
+          ${best[quiz.id] != null ? `<span class="badge ${best[quiz.id] >= quiz.pass_score ? 'ok' : 'bad'}">Mejor nota: ${best[quiz.id]}% (mínimo ${quiz.pass_score}%)</span>` : `<span class="badge">Pendiente · mínimo ${quiz.pass_score}%</span>`}
+          ${passed ? `<a class="btn ghost sm" href="#/cert/${c.id}">Constancia</a>` : ''}</div>`
+          : `<div class="item quiz"><span class="ic">🔒</span><span class="grow muted"><b>${esc(quiz.title)}</b> · completa los ${mods.length} módulos para desbloquearlo</span></div>`) : ''}
       </section>`;
     }).join('');
 
@@ -457,6 +464,28 @@
     fit(); show(0);
   }
 
+  async function certView(chapterId) {
+    shell('<div class="wrap"><p class="loading">Cargando…</p></div>', 'home');
+    const chapter = await q(sb.from('chapters').select('*').eq('id', chapterId).single());
+    const subject = await q(sb.from('subjects').select('id,title').eq('id', chapter.subject_id).single());
+    const quiz = await q(sb.from('quizzes').select('id,title,pass_score').eq('chapter_id', chapterId).maybeSingle());
+    const atts = quiz ? await q(sb.from('quiz_attempts').select('score,total,created_at').eq('quiz_id', quiz.id).eq('student_id', me.id).order('created_at')) : [];
+    const ok = atts.filter((a) => Math.round(a.score / a.total * 100) >= quiz.pass_score);
+    if (!ok.length) { $('#page').innerHTML = `<div class="wrap"><div class="card"><h2>Capítulo aún no cumplido</h2><p>La constancia se emite cuando alcanzas la nota mínima del quiz.</p><a class="btn" href="#/s/${subject.id}">Volver</a></div></div>`; return; }
+    const best = Math.max(...ok.map((a) => Math.round(a.score / a.total * 100)));
+    const when = new Date(ok[0].created_at).toLocaleDateString('es-PA', { dateStyle: 'long' });
+    const name = esc(me.full_name || me.email);
+    const doc = `<div class="cert"><p class="small">CONSTANCIA DE CAPÍTULO CUMPLIDO</p><h1>${name}</h1>
+      <p>completó todos los módulos y aprobó el quiz del capítulo</p><h2>${esc(chapter.title)}</h2><p>de la materia <b>${esc(subject.title)}</b></p>
+      <p>Mejor nota: <b>${best}%</b> (mínimo requerido ${quiz.pass_score}%)<br>Fecha en que se cumplió: <b>${when}</b></p><p class="small">Ing. Juan Carlos Candanedo</p></div>`;
+    $('#page').innerHTML = `<div class="wrap"><div class="crumbs"><a href="#/">Mis materias</a> › <a href="#/s/${subject.id}">${esc(subject.title)}</a> › Constancia</div>
+      <style>.cert{border:3px double #0b2a45;border-radius:12px;padding:2.2rem 1.5rem;text-align:center;background:#fff;color:#0b2a45}.cert h1{margin:.6rem 0}.cert h2{margin:.4rem 0 .2rem}.cert .small{letter-spacing:.12em;opacity:.7}</style>
+      ${doc}<p style="text-align:center"><button class="btn" id="cprint">Imprimir / guardar PDF</button></p></div>`;
+    $('#cprint').onclick = () => { const w = window.open('', '_blank'); if (!w) { toast('Permite las ventanas emergentes'); return; }
+      w.document.write(`<html><head><meta charset="utf-8"><title>Constancia</title><style>body{font-family:Calibri,Arial,sans-serif;padding:2rem}.cert{border:3px double #0b2a45;border-radius:12px;padding:3rem 2rem;text-align:center;color:#0b2a45}.cert h1{font-size:2.2rem}.small{letter-spacing:.12em;opacity:.7}</style></head><body>${doc}</body></html>`);
+      w.document.close(); w.focus(); setTimeout(() => w.print(), 300); };
+  }
+
   async function quizView(chapterId) {
     shell('<div class="wrap"><p class="loading">Cargando…</p></div>', 'home');
     const chapter = await q(sb.from('chapters').select('*').eq('id', chapterId).single());
@@ -464,6 +493,13 @@
     const quiz = await q(sb.from('quizzes').select('*').eq('chapter_id', chapterId).maybeSingle());
     const crumbs = `<div class="crumbs"><a href="#/">Mis materias</a> › <a href="#/s/${subject.id}">${esc(subject.title)}</a> › ${esc(chapter.title)}</div>`;
     if (!quiz) { $('#page').innerHTML = `<div class="wrap">${crumbs}<div class="card">Este capítulo no tiene quiz.</div></div>`; return; }
+    if (!isAdmin()) {
+      const mods = await q(sb.from('modules').select('id').eq('chapter_id', chapterId));
+      const prog = mods.length ? await q(sb.from('module_progress').select('module_id').eq('student_id', me.id).in('module_id', mods.map((m) => m.id))) : [];
+      if (mods.length && prog.length < mods.length) {
+        $('#page').innerHTML = `<div class="wrap">${crumbs}<div class="card"><h2>🔒 Quiz bloqueado</h2><p>Completa los ${mods.length} módulos del capítulo para desbloquearlo (llevas ${prog.length}).</p><a class="btn" href="#/s/${subject.id}">Volver a la materia</a></div></div>`; return;
+      }
+    }
     const questions = (await q(sb.from('quiz_questions').select('*').eq('quiz_id', quiz.id))).sort(byPos);
     const attempts = (await q(sb.from('quiz_attempts').select('*').eq('quiz_id', quiz.id).eq('student_id', me.id).order('created_at', { ascending: false })));
 
@@ -927,6 +963,45 @@ ${content}`;
     render();
   }
 
+  async function adminProgress(students, subjects, enr) {
+    const [chs, mods, quizzes, prog, atts] = await Promise.all([
+      q(sb.from('chapters').select('id,title,subject_id,position')), q(sb.from('modules').select('id,chapter_id')),
+      q(sb.from('quizzes').select('id,chapter_id,pass_score')), q(sb.from('module_progress').select('student_id,module_id')),
+      q(sb.from('quiz_attempts').select('quiz_id,student_id,score,total,created_at'))]);
+    const sName = Object.fromEntries(subjects.map((x) => [x.id, x.title]));
+    const done = new Set(prog.map((x) => x.student_id + '|' + x.module_id));
+    const rows = [];
+    enr.forEach((e) => {
+      const st = students.find((x) => x.id === e.student_id); if (!st || !sName[e.subject_id]) return;
+      chs.filter((c) => c.subject_id === e.subject_id).sort(byPos).forEach((c) => {
+        const ms = mods.filter((m) => m.chapter_id === c.id), d = ms.filter((m) => done.has(st.id + '|' + m.id)).length;
+        const z = quizzes.find((x) => x.chapter_id === c.id);
+        const mine = z ? atts.filter((a) => a.quiz_id === z.id && a.student_id === st.id) : [];
+        const pcts = mine.map((a) => Math.round(a.score / a.total * 100));
+        const best = pcts.length ? Math.max(...pcts) : null;
+        const okDates = z ? mine.filter((a) => Math.round(a.score / a.total * 100) >= z.pass_score).map((a) => a.created_at).sort() : [];
+        const estado = okDates.length ? 'Cumplido' : (ms.length && d === ms.length ? 'Quiz pendiente' : 'En módulos');
+        rows.push({ est: st.full_name || st.email, correo: st.email, materia: sName[e.subject_id], cap: c.title, mod: d + '/' + ms.length, best, min: z ? z.pass_score : null, intentos: mine.length, estado, fecha: okDates[0] || '' });
+      });
+    });
+    const box = document.createElement('div');
+    box.innerHTML = `<h2 style="margin-top:2rem">Avance por capítulo</h2>
+      <p class="muted small">Un capítulo se considera cumplido cuando el estudiante completó todos los módulos y alcanzó la nota mínima del quiz.</p>
+      <div class="row" style="margin-bottom:.5rem"><button class="btn sm" id="pcsv">Descargar CSV (Excel)</button></div>
+      <div class="card" style="overflow:auto">${rows.length ? `<table class="t"><thead><tr><th>Estudiante</th><th>Materia</th><th>Capítulo</th><th>Módulos</th><th>Mejor nota</th><th>Intentos</th><th>Estado</th><th>Cumplido el</th></tr></thead><tbody>
+      ${rows.map((r) => `<tr><td>${esc(r.est)}</td><td>${esc(r.materia)}</td><td>${esc(r.cap)}</td><td>${r.mod}</td><td>${r.best == null ? '—' : r.best + '% <span class="muted small">(mín. ' + r.min + '%)</span>'}</td><td>${r.intentos}</td><td><span class="badge ${r.estado === 'Cumplido' ? 'ok' : ''}">${r.estado}</span></td><td>${r.fecha ? fmtDate(r.fecha) : ''}</td></tr>`).join('')}
+      </tbody></table>` : '<p class="muted">Aún no hay estudiantes matriculados.</p>'}</div>`;
+    $('#page .wrap').appendChild(box);
+    const csvBtn = box.querySelector('#pcsv');
+    csvBtn.onclick = () => {
+      const head = ['Estudiante', 'Correo', 'Materia', 'Capítulo', 'Módulos completados', 'Mejor nota %', 'Nota mínima %', 'Intentos', 'Estado', 'Fecha de cumplimiento'];
+      const esc2 = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+      const lines = [head].concat(rows.map((r) => [r.est, r.correo, r.materia, r.cap, r.mod, r.best == null ? '' : r.best, r.min == null ? '' : r.min, r.intentos, r.estado, r.fecha ? fmtDate(r.fecha) : '']));
+      const blob = new Blob(['﻿' + lines.map((l) => l.map(esc2).join(';')).join('\n')], { type: 'text/csv;charset=utf-8' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'avance_capitulos.csv'; a.click();
+    };
+  }
+
   // ---------- estudiantes y notas ----------
   async function adminStudents() {
     shell('<div class="wrap"><p class="loading">Cargando…</p></div>', 'admin');
@@ -955,6 +1030,7 @@ ${content}`;
           <td>${esc(ch && ch.subjects ? ch.subjects.title : '')} › ${esc(ch ? ch.title : '')}</td><td><b>${pct}%</b> <span class="muted small">(${a.score}/${a.total})</span></td></tr>`; }).join('')}
       </tbody></table>` : '<p class="muted">Todavía no hay intentos.</p>'}
       </div></div>`;
+    adminProgress(students, subjects, enr);
     on('input[data-st]', 'change', async (cb) => {
       const row = { student_id: cb.dataset.st, subject_id: cb.dataset.su };
       try {
