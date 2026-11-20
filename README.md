@@ -95,3 +95,8 @@ Los ZIP que genera el optimizador ya no traen notas del orador: se generan con I
 En **Admin → Estudiantes → Crear estudiante e invitarlo** escribes nombre, correo y contraseña (o «Generar»), marcas las materias y obtienes un texto de invitación para copiar o abrir en tu correo. El botón «Nueva contraseña» de cada estudiante le asigna una nueva.
 Requiere la función `crear-usuario` y esta variable en Netlify (Site configuration → Environment variables):
 - `SUPABASE_SERVICE_ROLE_KEY` = clave **service_role** (Supabase → Project Settings → API). Es SECRETA: nunca la pegues en el código ni en un chat.
+
+## Capítulo bloqueado / liberado (p. ej. examen final)
+1. Ejecuta `supabase/migracion_3.sql` en Supabase → SQL Editor (una vez; es seguro repetirla).
+2. En «Editar estructura» de la materia, cada capítulo tiene el botón **🔓 Liberado · Bloquear** / **🔒 Bloqueado · Liberar**.
+3. Un capítulo bloqueado lo ven los estudiantes con 🔒 «Disponible cuando el tutor lo libere»; sus módulos, quiz y preguntas no se pueden leer (lo impone la base de datos). El administrador siempre los ve.

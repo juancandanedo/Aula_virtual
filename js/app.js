@@ -179,8 +179,9 @@
       const d = mods.filter((m) => done.has(m.id)).length;
       const allDone = mods.length > 0 && d === mods.length;
       const passed = quiz && passAt[quiz.id];
+      if (c.released === false && !isAdmin()) return `<section class="card chapter"><header class="row sb"><h2 style="margin:0">Capítulo ${ci + 1}: ${esc(c.title)}</h2><span class="badge">🔒 Bloqueado</span></header><div class="item muted"><span class="ic">🔒</span><span class="grow">Disponible cuando el tutor lo libere.</span></div></section>`;
       return `<section class="card chapter">
-        <header class="row sb"><h2 style="margin:0">Capítulo ${ci + 1}: ${esc(c.title)}</h2><span>${passed ? '<span class="badge ok">✓ Capítulo cumplido</span> ' : ''}<span class="badge ${allDone ? 'ok' : ''}">${d}/${mods.length} módulos</span></span></header>
+        <header class="row sb"><h2 style="margin:0">Capítulo ${ci + 1}: ${esc(c.title)}</h2><span>${c.released === false ? '<span class="badge">🔒 No liberado (solo tú lo ves)</span> ' : ''}${passed ? '<span class="badge ok">✓ Capítulo cumplido</span> ' : ''}<span class="badge ${allDone ? 'ok' : ''}">${d}/${mods.length} módulos</span></span></header>
         ${mods.map((m, mi) => `<div class="item"><span class="ic ${done.has(m.id) ? 'done' : ''}">${done.has(m.id) ? '✓' : mi + 1}</span>
           <a class="grow" href="#/m/${m.id}">${esc(m.title)}</a><span class="muted small">${m.slide_count} diap.</span></div>`).join('') || '<div class="item muted">Sin módulos todavía</div>'}
         ${quiz ? ((allDone || isAdmin()) ? `<div class="item quiz"><span class="ic">?</span><a class="grow" href="#/q/${c.id}"><b>${esc(quiz.title)}</b></a>
@@ -492,6 +493,7 @@
     const subject = await q(sb.from('subjects').select('id,title').eq('id', chapter.subject_id).single());
     const quiz = await q(sb.from('quizzes').select('*').eq('chapter_id', chapterId).maybeSingle());
     const crumbs = `<div class="crumbs"><a href="#/">Mis materias</a> › <a href="#/s/${subject.id}">${esc(subject.title)}</a> › ${esc(chapter.title)}</div>`;
+    if (chapter.released === false && !isAdmin()) { $('#page').innerHTML = `<div class="wrap">${crumbs}<div class="card"><h2>🔒 Bloqueado</h2><p>Disponible cuando el tutor lo libere.</p><a class="btn" href="#/s/${subject.id}">Volver a la materia</a></div></div>`; return; }
     if (!quiz) { $('#page').innerHTML = `<div class="wrap">${crumbs}<div class="card">Este capítulo no tiene quiz.</div></div>`; return; }
     if (!isAdmin()) {
       const mods = await q(sb.from('modules').select('id').eq('chapter_id', chapterId));
@@ -605,6 +607,7 @@
         return `<section class="card chapter">
           <header class="row"><h3 class="grow" style="margin:0">Capítulo ${ci + 1}: ${esc(c.title)}</h3>
             <button class="btn ghost sm" data-chup="${ci}">↑</button><button class="btn ghost sm" data-chdown="${ci}">↓</button>
+            <button class="btn ${c.released === false ? '' : 'ghost'} sm" data-chrel="${c.id}" data-r="${c.released === false ? 1 : 0}">${c.released === false ? '🔒 Bloqueado · Liberar' : '🔓 Liberado · Bloquear'}</button>
             <button class="btn ghost sm" data-chren="${c.id}" data-t="${esc(c.title)}">Renombrar</button>
             <button class="btn danger sm" data-chdel="${c.id}">Eliminar</button></header>
           ${mods.map((m, mi) => `<div class="item"><span class="ic">${mi + 1}</span>
@@ -636,6 +639,7 @@
     };
     on('[data-chup]', 'click', async (b) => { await reorder('chapters', chapters, +b.dataset.chup, -1); route(); });
     on('[data-chdown]', 'click', async (b) => { await reorder('chapters', chapters, +b.dataset.chdown, 1); route(); });
+    on('[data-chrel]', 'click', async (b) => { const rel = b.dataset.r === '1'; await q(sb.from('chapters').update({ released: rel }).eq('id', b.dataset.chrel)); toast(rel ? 'Capítulo liberado' : 'Capítulo bloqueado'); route(); });
     on('[data-chren]', 'click', async (b) => { const t = prompt('Nuevo nombre:', b.dataset.t); if (!t) return; await q(sb.from('chapters').update({ title: t }).eq('id', b.dataset.chren)); route(); });
     on('[data-chdel]', 'click', async (b) => {
       if (!confirm('¿Eliminar este capítulo con sus módulos y quiz?')) return;
