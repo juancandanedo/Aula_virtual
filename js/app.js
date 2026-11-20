@@ -477,7 +477,7 @@
     const name = esc(me.full_name || me.email);
     const doc = `<div class="cert"><p class="small">CONSTANCIA DE CAPÍTULO CUMPLIDO</p><h1>${name}</h1>
       <p>completó todos los módulos y aprobó el quiz del capítulo</p><h2>${esc(chapter.title)}</h2><p>de la materia <b>${esc(subject.title)}</b></p>
-      <p>Mejor nota: <b>${best}%</b> (mínimo requerido ${quiz.pass_score}%)<br>Fecha en que se cumplió: <b>${when}</b></p><p class="small">Ing. Juan Carlos Candanedo</p></div>`;
+      <p>Mejor nota: <b>${best}%</b> (mínimo requerido ${quiz.pass_score}%)<br>Fecha en que se cumplió: <b>${when}</b></p><p class="small">Aplicación desarrollada por DFP Panamá</p></div>`;
     $('#page').innerHTML = `<div class="wrap"><div class="crumbs"><a href="#/">Mis materias</a> › <a href="#/s/${subject.id}">${esc(subject.title)}</a> › Constancia</div>
       <style>.cert{border:3px double #0b2a45;border-radius:12px;padding:2.2rem 1.5rem;text-align:center;background:#fff;color:#0b2a45}.cert h1{margin:.6rem 0}.cert h2{margin:.4rem 0 .2rem}.cert .small{letter-spacing:.12em;opacity:.7}</style>
       ${doc}<p style="text-align:center"><button class="btn" id="cprint">Imprimir / guardar PDF</button></p></div>`;
@@ -1030,7 +1030,7 @@ ${content}`;
       <p class="muted small">Los estudiantes también pueden registrarse solos desde la pantalla de inicio. Aquí marcas a qué materias tienen acceso (solo se ven las materias publicadas).</p>
       <div class="card" style="overflow:auto">
       ${students.length && subjects.length ? `<table class="t"><thead><tr><th>Estudiante</th>${subjects.map((s) => `<th>${esc(s.title)}</th>`).join('')}</tr></thead><tbody>
-        ${students.map((st) => `<tr><td><b>${esc(st.full_name || '(sin nombre)')}</b><br><span class="muted small">${esc(st.email)}</span><br><button class="btn ghost sm" data-pw="${st.id}" data-em="${esc(st.email)}">Nueva contraseña</button></td>
+        ${students.map((st) => `<tr><td><b>${esc(st.full_name || '(sin nombre)')}</b><br><span class="muted small">${esc(st.email)}</span><br><button class="btn ghost sm" data-pw="${st.id}" data-em="${esc(st.email)}">Nueva contraseña</button> <button class="btn ghost sm" data-del="${st.id}" data-em="${esc(st.email)}" style="color:#C0392B">Eliminar</button></td>
           ${subjects.map((s) => `<td><input type="checkbox" data-st="${st.id}" data-su="${s.id}" ${has.has(st.id + '|' + s.id) ? 'checked' : ''}></td>`).join('')}</tr>`).join('')}
       </tbody></table>` : '<p class="muted">Aún no hay estudiantes registrados o no has creado materias.</p>'}
       </div>
@@ -1050,7 +1050,7 @@ ${content}`;
       return d;
     };
     const genPass = () => { const a = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789'; const u = crypto.getRandomValues(new Uint32Array(10)); return Array.from(u, (n) => a[n % a.length]).join(''); };
-    const invite = (name, email, pass) => `Hola ${name || ''},\n\nTe invito al Aula Virtual.\n\nEnlace: ${location.origin}\nUsuario (correo): ${email}\nContraseña: ${pass}\n\nTe recomiendo cambiar la contraseña después de entrar.\n\nIng. Juan Carlos Candanedo`;
+    const invite = (name, email, pass) => `Hola ${name || ''},\n\nTe invito al Aula Virtual.\n\nEnlace: ${location.origin}\nUsuario (correo): ${email}\nContraseña: ${pass}\n\nTe recomiendo cambiar la contraseña después de entrar.\n\nAplicación desarrollada por DFP Panamá`;
     const showInvite = (name, email, pass) => {
       const txt = invite(name, email, pass);
       $('#nu-out').innerHTML = `<h3>Invitación lista</h3><textarea readonly rows="9" style="width:100%">${esc(txt)}</textarea>
@@ -1064,13 +1064,18 @@ ${content}`;
       const ids = [...document.querySelectorAll('.nu-su:checked')].map((c) => c.value);
       if (!email || pass.length < 8) { toast('Escribe el correo y una contraseña de al menos 8 caracteres'); return; }
       const b = $('#nu-go'); b.disabled = true;
-      try { await call({ action: 'create', email, password: pass, full_name: name, subject_ids: ids }); toast('Usuario creado'); showInvite(name, email, pass); }
+      try { const res = await call({ action: 'create', email, password: pass, full_name: name, subject_ids: ids }); toast(res.warn || (res.enrolled ? 'Usuario creado y matriculado en ' + res.enrolled + ' materia(s)' : 'Usuario creado SIN materias (marca las materias en la tabla)')); showInvite(name, email, pass); }
       catch (e) { toast(e.message); } finally { b.disabled = false; }
     };
     document.querySelectorAll('[data-pw]').forEach((b) => { b.onclick = async () => {
       const pass = genPass();
       if (!confirm('¿Asignar una nueva contraseña a ' + b.dataset.em + '?')) return;
       try { await call({ action: 'reset', user_id: b.dataset.pw, password: pass }); $('#newuser').scrollIntoView(); $('#nu-email').value = b.dataset.em; $('#nu-pass').value = pass; showInvite('', b.dataset.em, pass); }
+      catch (e) { toast(e.message); }
+    }; });
+    document.querySelectorAll('[data-del]').forEach((b) => { b.onclick = async () => {
+      if (!confirm('¿Eliminar a ' + b.dataset.em + '?\n\nSe borran su cuenta, matrículas, progreso y notas. No se puede deshacer.')) return;
+      try { await call({ action: 'delete', user_id: b.dataset.del }); toast('Usuario eliminado'); adminStudents(); }
       catch (e) { toast(e.message); }
     }; });
     adminProgress(students, subjects, enr);

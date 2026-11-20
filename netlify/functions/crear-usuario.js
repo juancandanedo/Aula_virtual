@@ -12,9 +12,19 @@ exports.handler = async (event) => {
   let input; try { input = JSON.parse(event.body || '{}'); } catch (e) { return json(400, { error: 'JSON inválido' }); }
   const H = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };
   const password = String(input.password || '');
-  if (password.length < 8) return json(400, { error: 'La contraseña debe tener al menos 8 caracteres.' });
 
   try {
+    if (input.action === 'delete') {
+      const id = String(input.user_id || '');
+      if (!/^[0-9a-f-]{36}$/i.test(id)) return json(400, { error: 'Usuario inválido' });
+      const pr = await fetch(`${SUPABASE_URL}/rest/v1/profiles?select=role&id=eq.${id}`, { headers: H });
+      const rows = await pr.json();
+      if (rows[0] && rows[0].role === 'admin') return json(403, { error: 'No se puede eliminar a un administrador.' });
+      const r = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${id}`, { method: 'DELETE', headers: H });
+      if (!r.ok) { let d = {}; try { d = await r.json(); } catch (x) { /* */ } return json(502, { error: d.msg || d.message || ('Error ' + r.status) }); }
+      return json(200, { ok: true });
+    }
+    if (password.length < 8) return json(400, { error: 'La contraseña debe tener al menos 8 caracteres.' });
     if (input.action === 'reset') {
       const id = String(input.user_id || '');
       if (!/^[0-9a-f-]{36}$/i.test(id)) return json(400, { error: 'Usuario inválido' });
@@ -38,12 +48,15 @@ exports.handler = async (event) => {
       return json(502, { error: m || ('Error ' + r.status) });
     }
     const ids = (Array.isArray(input.subject_ids) ? input.subject_ids : []).filter((x) => /^[0-9a-f-]{36}$/i.test(String(x)));
+    let enrolled = 0, warn = '';
     if (ids.length) {
-      await fetch(`${SUPABASE_URL}/rest/v1/enrollments`, {
+      const er = await fetch(`${SUPABASE_URL}/rest/v1/enrollments?on_conflict=student_id,subject_id`, {
         method: 'POST', headers: { ...H, Prefer: 'resolution=ignore-duplicates,return=minimal' },
         body: JSON.stringify(ids.map((sid) => ({ student_id: d.id, subject_id: sid })))
       });
+      if (er.ok) enrolled = ids.length;
+      else { let m = ''; try { const e = await er.json(); m = e.message || ''; } catch (x) { /* */ } warn = 'El usuario se creó, pero no se pudo matricular: ' + (m || er.status); }
     }
-    return json(200, { ok: true, id: d.id });
+    return json(200, { ok: true, id: d.id, enrolled, warn });
   } catch (e) { return json(502, { error: 'No se pudo contactar a Supabase' }); }
 };
